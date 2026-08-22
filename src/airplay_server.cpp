@@ -25,8 +25,6 @@ bool AirPlayServer::start() {
   mdns_ = create_mdns_service();
   crypto_handler_ = create_crypto_handler();
 
-  std::cout << crypto_handler_->get_pk_string() << std::endl;
-
   if (mdns_->start()) {
     std::map<std::string, std::string> txt = {
         {"deviceid", device_id_},
