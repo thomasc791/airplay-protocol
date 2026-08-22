@@ -85,11 +85,11 @@ std::vector<uint8_t> RTSPParser::create_plist() {
 
   auto plist = plistWriter.serialize(V::dict({
       {"deviceID", V::string(get_system_mac_address())},
-      {"features", V::uint(0x1C340445F8A00)},
+      {"features", V::uint(0xC340445F8A00)},
       {"flags", V::uint(0x04)},
       {"model", V::string("AudioAccessory6,1")},
       // {"pk", V::string(crypto_handler_->get_public_hex_string())},
-      {"pi", V::string("bfbe459e-a7cf-4ef4-b4fd-e646d97c433f")},
+      {"pi", V::string("767e31b2-9074-4be0-a3ad-4c0b491877ca")},
       {"protocolVersion", V::string("1.1")},
       {"sourceVersion", V::string("366.0")},
       // {"audioFormats", V::array({V::dict({
@@ -275,7 +275,23 @@ int RTSPParser::rtsp_post_pair_setup() {
   return 0;
 };
 
-int RTSPParser::rtsp_post_pair_verify() { return 0; };
+int RTSPParser::rtsp_post_pair_verify() {
+  uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2
+                   0x07, 0x01, 0x02}; // Error = Authentication
+
+  int header_len = snprintf(header, sizeof(header),
+                            "RTSP/1.0 200 OK\r\n"
+                            "CSeq: %d\r\n"
+                            "Content-Type: application/octet-stream\r\n"
+                            "Content-Length: %d\r\n"
+                            "\r\n",
+                            CSeq, (int)sizeof(tlv));
+
+  send(client_fd, header, header_len, 0);
+  send(client_fd, tlv, sizeof(tlv), 0);
+
+  return 0;
+};
 
 std::unique_ptr<RTSPParser>
 create_rtsp_parser(int client_fd,

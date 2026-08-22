@@ -68,22 +68,30 @@ int CryptoHandler::store_retrieve_pkey() {
     pub_key_hex_ = chars_to_string(pub_, 32);
     priv_key_hex_ = chars_to_string(priv_, 32);
 
-    std::ofstream keyFile(filePath);
-    if (keyFile.is_open()) {
-      keyFile << pub_key_hex_;
+    std::ofstream publicKeyFile(filePath / ".pub");
+    if (publicKeyFile.is_open()) {
+      publicKeyFile << pub_key_hex_;
+    }
+
+    std::ofstream privateKeyFile(filePath / ".priv");
+    if (privateKeyFile.is_open()) {
+      privateKeyFile << priv_key_hex_;
     }
 
     EVP_PKEY_free(pkey);
     pkey = nullptr;
 
-    keyFile.close();
+    publicKeyFile.close();
 
     return 0;
   } else {
-    std::ifstream keyFile(filePath);
-    std::getline(keyFile, pub_key_hex_);
+    std::ifstream publicKeyFile(filePath / ".pub");
+    std::ifstream privateKeyFile(filePath / ".priv");
+    std::getline(publicKeyFile, pub_key_hex_);
+    std::getline(privateKeyFile, priv_key_hex_);
 
-    keyFile.close();
+    publicKeyFile.close();
+    privateKeyFile.close();
   }
 
   return 0;

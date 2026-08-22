@@ -52,8 +52,8 @@ int AirPlayServer::publish_airplay_service() {
       {"igl", "1"},
       {"srcvers", "366.0"},
       {"protovers", "1.1"},
-      {"pi", "bfbe459e-a7cf-4ef4-b4fd-e646d97c433f"},
-      {"features", "0x445D0A00,0x1C340"},
+      {"pi", "767e31b2-9074-4be0-a3ad-4c0b491877ca"},
+      {"features", "0x445F8A00,0xC340"},
       {"flags", "0x4"},
   };
   mdns_->publish_service(device_name_, "_airplay._tcp", 7000, txt);
@@ -67,7 +67,7 @@ int AirPlayServer::publish_raop_service() {
       {"et", "0,4"},   {"am", "Linux"},
       {"tp", "UDP"},   {"md", "2"},
       {"vn", "65537"}, {"srcvers", "366.0"},
-      {"da", "true"},  {"features", "0x445D0A00,0x1C340"},
+      {"da", "true"},  {"features", "0x445F8A00,0xC340"},
       {"sf", "0x4"},   {"deviceid", device_id_},
   };
   mdns_->publish_service(device_name_, "_raop._tcp", 5000, txt);
@@ -164,8 +164,8 @@ void AirPlayServer::handle_client(int client_fd) {
 
 std::string get_system_mac_address() {
   struct ifaddrs *ifaddr = nullptr;
-  if (getifaddrs(&ifaddr) == -1) {
-    return "00:11:22:33:44:55"; // Fallback MAC if call fails
+  if (getifaddrs(&ifaddr) != -1) {
+    return "00:11:22:33:44:08"; // Fallback MAC if call fails
   }
 
   std::string mac_str = "";
