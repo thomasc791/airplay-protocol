@@ -1,0 +1,25 @@
+#pragma once
+
+#include <cstdint>
+#include <memory>
+#include <openssl/evp.h>
+#include <string>
+
+class CryptoHandler {
+public:
+  CryptoHandler();
+  ~CryptoHandler();
+
+  int store_retrieve_pkey();
+  std::string get_pk_string();
+
+private:
+  EVP_PKEY *generate_identity_keypair();
+  int get_raw_keypair(EVP_PKEY *pkey);
+
+  uint8_t priv_[32], pub_[32];
+  EVP_PKEY *pkey;
+  std::string pk_string_;
+};
+
+std::shared_ptr<CryptoHandler> create_crypto_handler();
