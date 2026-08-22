@@ -9,15 +9,26 @@
 
 namespace fs = std::filesystem;
 
-CryptoHandler::CryptoHandler() { store_retrieve_pkey(); }
+CryptoHandler::CryptoHandler() : pkey(nullptr) { store_retrieve_pkey(); }
 CryptoHandler::~CryptoHandler() {}
 
 EVP_PKEY *CryptoHandler::generate_identity_keypair() {
   EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, nullptr);
   EVP_PKEY *pkey = nullptr;
 
-  EVP_PKEY_keygen_init(ctx);
-  EVP_PKEY_keygen(ctx, &pkey);
+  if (!EVP_PKEY_keygen_init(ctx)) {
+    std::cerr << "EVP_PKEY key generation initialisation failed." << std::endl;
+
+    EVP_PKEY_CTX_free(ctx);
+    return pkey;
+  }
+
+  if (!EVP_PKEY_keygen(ctx, &pkey)) {
+    std::cerr << "EVP_PKEY key generation failed." << std::endl;
+
+    EVP_PKEY_CTX_free(ctx);
+    return pkey;
+  }
 
   EVP_PKEY_CTX_free(ctx);
 
@@ -54,21 +65,23 @@ int CryptoHandler::store_retrieve_pkey() {
     pkey = generate_identity_keypair();
     get_raw_keypair(pkey);
 
-    pk_string_ = chars_to_string(priv_, 32);
+    pub_key_hex_ = chars_to_string(pub_, 32);
+    priv_key_hex_ = chars_to_string(priv_, 32);
 
     std::ofstream keyFile(filePath);
     if (keyFile.is_open()) {
-      keyFile << pk_string_;
+      keyFile << pub_key_hex_;
     }
 
     EVP_PKEY_free(pkey);
+    pkey = nullptr;
 
     keyFile.close();
 
     return 0;
   } else {
     std::ifstream keyFile(filePath);
-    std::getline(keyFile, pk_string_);
+    std::getline(keyFile, pub_key_hex_);
 
     keyFile.close();
   }
@@ -76,7 +89,9 @@ int CryptoHandler::store_retrieve_pkey() {
   return 0;
 }
 
-std::string CryptoHandler::get_pk_string() { return this->pk_string_; }
+std::string CryptoHandler::get_public_hex_string() {
+  return this->pub_key_hex_;
+}
 
 std::shared_ptr<CryptoHandler> create_crypto_handler() {
   return std::make_shared<CryptoHandler>();

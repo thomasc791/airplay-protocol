@@ -11,7 +11,7 @@ public:
   ~CryptoHandler();
 
   int store_retrieve_pkey();
-  std::string get_pk_string();
+  std::string get_public_hex_string();
 
 private:
   EVP_PKEY *generate_identity_keypair();
@@ -19,7 +19,7 @@ private:
 
   uint8_t priv_[32], pub_[32];
   EVP_PKEY *pkey;
-  std::string pk_string_;
+  std::string priv_key_hex_, pub_key_hex_;
 };
 
 std::shared_ptr<CryptoHandler> create_crypto_handler();

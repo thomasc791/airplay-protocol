@@ -85,12 +85,13 @@ std::vector<uint8_t> RTSPParser::create_plist() {
 
   auto plist = plistWriter.serialize(V::dict({
       {"deviceID", V::string(get_system_mac_address())},
-      {"features", V::string("0x445D0A00,0x1C340")},
+      {"features", V::uint(0x1C340445F8A00)},
       {"flags", V::uint(0x04)},
       {"model", V::string("AudioAccessory6,1")},
-      {"pk", V::string(crypto_handler_->get_pk_string())},
-      {"protovers", V::string("1.1")},
-      {"srcvers", V::string("715.7")},
+      // {"pk", V::string(crypto_handler_->get_public_hex_string())},
+      {"pi", V::string("bfbe459e-a7cf-4ef4-b4fd-e646d97c433f")},
+      {"protocolVersion", V::string("1.1")},
+      {"sourceVersion", V::string("366.0")},
       // {"audioFormats", V::array({V::dict({
       //                      {"type", V::uint(96)},
       //                      {"audioInputFormats", V::uint(0x01000000)},
@@ -117,6 +118,17 @@ int RTSPParser::rtsp_get_options() {
 }
 
 int RTSPParser::rtsp_post_commands() {
+
+  int header_len = snprintf(header, sizeof(header),
+                            "RTSP/1.0 200 OK\r\n"
+                            "CSeq: %d\r\n"
+                            "Public: OPTIONS, GET, POST, SETUP, ANNOUNCE, "
+                            "RECORD, PAUSE, FLUSH, TEARDOWN\r\n"
+                            "Server: AirTunes/366.0\r\n"
+                            "\r\n",
+                            CSeq);
+
+  send(client_fd, header, header_len, 0);
   // int header_len = snprintf(header, sizeof(header),
   //                           "RTSP/1.0 200 OK\r\n"
   //                           "CSeq: %d\r\n"
@@ -140,7 +152,19 @@ int RTSPParser::rtsp_post_commands() {
   return 0;
 }
 
-int RTSPParser::rtsp_post_fp_setup() { return 0; }
+int RTSPParser::rtsp_post_fp_setup() {
+  int header_len = snprintf(header, sizeof(header),
+                            "RTSP/1.0 200 OK\r\n"
+                            "CSeq: %d\r\n"
+                            "Public: OPTIONS, GET, POST, SETUP, ANNOUNCE, "
+                            "RECORD, PAUSE, FLUSH, TEARDOWN\r\n"
+                            "Server: AirTunes/366.0\r\n"
+                            "\r\n",
+                            CSeq);
+
+  send(client_fd, header, header_len, 0);
+  return 0;
+}
 
 int RTSPParser::rtsp_get_info() {
   std::vector<uint8_t> plist = create_plist();
@@ -194,7 +218,6 @@ int RTSPParser::get_title() {
     return -1;
 
   title = std::string((const char *)msg, lineEnd);
-  std::cout << title << std::endl;
   return 0;
 }
 

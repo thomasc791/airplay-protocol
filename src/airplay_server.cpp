@@ -26,28 +26,52 @@ bool AirPlayServer::start() {
   crypto_handler_ = create_crypto_handler();
 
   if (mdns_->start()) {
-    std::map<std::string, std::string> txt = {
-        {"deviceid", device_id_},
-        {"model", "AudioAccessory6,1"},
-        {"pk", crypto_handler_->get_pk_string()},
-        {"vv", "2"},
-        {"gcgl", "1"},
-        {"igl", "1"},
-        {"srcvers", "715.7"},
-        {"protocolVersion", "1.1"},
-        {"pi", "5ccf7fb9-c914-4f10-9f3a-2a1d7c9a1234"},
-        {"features", "0x1C340445F8A00"},
-        {"sf", "0x4"},
-    };
-    mdns_->publish_service(device_name_, "_airplay._tcp", port_, txt);
+    if (publish_airplay_service() < 0)
+      std::cerr << "Failed to publish airplay service." << std::endl;
+    std::cout << "[AirPlayServer] Published AirPlay mDNS service: "
+              << device_name_ << " on port " << 7000 << std::endl;
 
-    std::cout << "[AirPlayServer] Published mDNS service: " << device_name_
-              << " on port " << port_ << std::endl;
+    if (publish_raop_service() < 0)
+      std::cerr << "Failed to publish raop service." << std::endl;
+    std::cout << "[AirPlayServer] Published RAOP mDNS service: " << device_name_
+              << " on port " << 5000 << std::endl;
   }
 
   running_ = true;
   server_thread_ = std::thread(&AirPlayServer::run, this);
   return true;
+}
+
+int AirPlayServer::publish_airplay_service() {
+  std::map<std::string, std::string> txt = {
+      {"deviceid", device_id_},
+      {"model", "AudioAccessory6,1"},
+      // {"pk", crypto_handler_->get_public_hex_string()},
+      {"vv", "2"},
+      {"gcgl", "1"},
+      {"igl", "1"},
+      {"srcvers", "366.0"},
+      {"protovers", "1.1"},
+      {"pi", "bfbe459e-a7cf-4ef4-b4fd-e646d97c433f"},
+      {"features", "0x445D0A00,0x1C340"},
+      {"flags", "0x4"},
+  };
+  mdns_->publish_service(device_name_, "_airplay._tcp", 7000, txt);
+  return 0;
+}
+
+int AirPlayServer::publish_raop_service() {
+  std::map<std::string, std::string> txt = {
+      // {"pk", crypto_handler_->get_public_hex_string()},
+      {"ch", "2"},     {"cn", "0,1"},
+      {"et", "0,4"},   {"am", "Linux"},
+      {"tp", "UDP"},   {"md", "2"},
+      {"vn", "65537"}, {"srcvers", "366.0"},
+      {"da", "true"},  {"features", "0x445D0A00,0x1C340"},
+      {"sf", "0x4"},   {"deviceid", device_id_},
+  };
+  mdns_->publish_service(device_name_, "_raop._tcp", 5000, txt);
+  return 0;
 }
 
 void AirPlayServer::stop() {

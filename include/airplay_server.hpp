@@ -18,6 +18,9 @@ private:
   std::shared_ptr<CryptoHandler> crypto_handler_;
 
   void run();
+  int create_airplay_service();
+  int publish_airplay_service();
+  int publish_raop_service();
   void handle_client(int client_fd);
 
 public:
