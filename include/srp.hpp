@@ -20,6 +20,9 @@ public:
   BnPtr H(const std::string &a, const std::string &b,
           const std::string &sep = "");
 
+  std::vector<uint8_t> get_salt();
+  std::vector<uint8_t> get_public_key();
+
 private:
   BnPtr N_;
   BnPtr g_;

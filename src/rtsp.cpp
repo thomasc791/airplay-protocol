@@ -4,6 +4,7 @@
 #include "crypto.hpp"
 #include "info_plist.hpp"
 #include "plist.hpp"
+#include "srp.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -11,11 +12,36 @@
 #include <memory>
 #include <ostream>
 #include <sys/socket.h>
+#include <vector>
+
+namespace {
+std::vector<uint8_t> encode_tlv8(uint8_t type,
+                                 const std::vector<uint8_t> &value) {
+  std::vector<uint8_t> out;
+
+  if (value.empty()) {
+    out.push_back(type);
+    out.push_back(0);
+    return out;
+  }
+  size_t offset = 0;
+  while (offset < value.size()) {
+    size_t chunk = std::min(value.size() - offset, size_t(255));
+    out.push_back(type);
+    out.push_back(static_cast<uint8_t>(chunk));
+    out.insert(out.end(), value.begin() + offset,
+               value.begin() + offset + chunk);
+    offset += chunk;
+  }
+
+  return out;
+}
+} // namespace
 
 RTSPParser::RTSPParser(int client_fd,
                        std::shared_ptr<CryptoHandler> crypto_handler)
-    : client_fd(client_fd), contentLength(), CSeq(), msg{}, plistWriter(),
-      header{}, crypto_handler_(crypto_handler) {
+    : client_fd_(client_fd), contentLength_(), CSeq_(), msg_{}, plistWriter_(),
+      srpHandler_(), header{}, cryptoHandler_(crypto_handler) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
 }
@@ -23,19 +49,19 @@ RTSPParser::RTSPParser(int client_fd,
 RTSPParser::~RTSPParser() {}
 
 int RTSPParser::set_client(int currentClient) {
-  client_fd = currentClient;
+  client_fd_ = currentClient;
   return 0;
 }
 
 int RTSPParser::set_msg(char *tcpMessage, int len) {
   // ESP_LOGI(TAG, "Set message with length: %d", len);
-  msg = tcpMessage;
-  messageLength = len;
+  msg_ = tcpMessage;
+  messageLength_ = len;
   return 0;
 }
 
 int RTSPParser::parse_message() {
-  msg[messageLength] = '\0';
+  msg_[messageLength_] = '\0';
 
   reset_state();
 
@@ -44,38 +70,35 @@ int RTSPParser::parse_message() {
   get_title();
   get_body();
 
-  if (strstr(msg, "GET /info")) {
+  if (strstr(msg_, "GET /info")) {
     printf("GET /info\n");
     rtsp_get_info();
-  } else if (strstr(msg, "OPTIONS *")) {
+  } else if (strstr(msg_, "OPTIONS *")) {
     printf("OPTIONS\n");
     rtsp_get_options();
-  } else if (strstr(msg, "POST /command")) {
+  } else if (strstr(msg_, "POST /command")) {
     printf("POST /command\n");
     rtsp_post_commands();
-  } else if (strstr(msg, "POST /fp-setup")) {
+  } else if (strstr(msg_, "POST /fp-setup")) {
     printf("POST /fp-setup\n");
     rtsp_post_fp_setup();
-  } else if (strstr(msg, "POST /pair-setup")) {
+  } else if (strstr(msg_, "POST /pair-setup")) {
     printf("POST /pair-setup\n");
     rtsp_post_pair_setup();
-  } else if (strstr(msg, "POST /pair-setup")) {
-    printf("POST /pair-setup\n");
-    rtsp_post_pair_setup();
-  } else if (strstr(msg, "POST /pair-verify")) {
+  } else if (strstr(msg_, "POST /pair-verify")) {
     printf("POST /pair-verify\n");
     rtsp_post_pair_verify();
   }
 
-  memset(msg, 0, MAX_MSG_BUFFER_SIZE);
-  messageLength = 0;
+  memset(msg_, 0, MAX_MSG_BUFFER_SIZE);
+  messageLength_ = 0;
 
   return 0;
 }
 
 int RTSPParser::reset_state() {
-  CSeq = -1;
-  contentLength = -1;
+  CSeq_ = -1;
+  contentLength_ = -1;
 
   return 0;
 }
@@ -83,7 +106,7 @@ int RTSPParser::reset_state() {
 std::vector<uint8_t> RTSPParser::create_plist() {
   using V = PlistWriter::Value;
 
-  auto plist = plistWriter.serialize(V::dict({
+  auto plist = plistWriter_.serialize(V::dict({
       {"deviceID", V::string(get_system_mac_address())},
       {"features", V::uint(0xC340445F8A00)},
       {"flags", V::uint(0x04)},
@@ -109,9 +132,9 @@ int RTSPParser::rtsp_get_options() {
                             "RECORD, PAUSE, FLUSH, TEARDOWN\r\n"
                             "Server: AirTunes/366.0\r\n"
                             "\r\n",
-                            CSeq);
+                            CSeq_);
 
-  send(client_fd, header, header_len, 0);
+  send(client_fd_, header, header_len, 0);
 
   std::cout << "Send rtsp get options" << std::endl;
   return 0;
@@ -126,9 +149,9 @@ int RTSPParser::rtsp_post_commands() {
                             "RECORD, PAUSE, FLUSH, TEARDOWN\r\n"
                             "Server: AirTunes/366.0\r\n"
                             "\r\n",
-                            CSeq);
+                            CSeq_);
 
-  send(client_fd, header, header_len, 0);
+  send(client_fd_, header, header_len, 0);
   // int header_len = snprintf(header, sizeof(header),
   //                           "RTSP/1.0 200 OK\r\n"
   //                           "CSeq: %d\r\n"
@@ -160,9 +183,9 @@ int RTSPParser::rtsp_post_fp_setup() {
                             "RECORD, PAUSE, FLUSH, TEARDOWN\r\n"
                             "Server: AirTunes/366.0\r\n"
                             "\r\n",
-                            CSeq);
+                            CSeq_);
 
-  send(client_fd, header, header_len, 0);
+  send(client_fd_, header, header_len, 0);
   return 0;
 }
 
@@ -176,11 +199,11 @@ int RTSPParser::rtsp_get_info() {
                             "Content-Type: application/x-apple-binary-plist\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
-                            CSeq, (int)plist.size());
+                            CSeq_, (int)plist.size());
 
-  if (send(client_fd, header, header_len, 0) < 0)
+  if (send(client_fd_, header, header_len, 0) < 0)
     std::cerr << "[RTSPParser] Header not sent correctly!" << std::endl;
-  if (send(client_fd, plist.data(), plist.size(), 0) < 0)
+  if (send(client_fd_, plist.data(), plist.size(), 0) < 0)
     std::cerr << "[RTSPParser] Header not sent correctly!" << std::endl;
 
   std::cout << header << std::endl;
@@ -191,87 +214,31 @@ int RTSPParser::rtsp_get_info() {
   return 0;
 }
 
-int RTSPParser::get_cseq() {
-  const char *cseq = strstr(msg, "CSeq:");
-
-  if (!cseq)
-    return -1;
-
-  sscanf(cseq, "CSeq: %d", &CSeq);
-  return 0;
-}
-
-int RTSPParser::get_content_length() {
-  const char *len = strstr(msg, "Content-Length:");
-
-  if (!len)
-    return -1;
-
-  sscanf(len, "Content-Length: %d", &contentLength);
-
-  return 0;
-}
-
-int RTSPParser::get_title() {
-  const char *lineEnd = strstr(msg, "\r\n");
-  if (!lineEnd)
-    return -1;
-
-  title = std::string((const char *)msg, lineEnd);
-  return 0;
-}
-
-int RTSPParser::get_body() {
-  body = strstr(msg, "\r\n\r\n");
-  if (!body)
-    return -1;
-  body += 4;
-
-  size_t headerLength = body - msg;
-  int bodyRead = messageLength - headerLength;
-  int remaining = contentLength - bodyRead;
-
-  std::string msgHeader(msg, headerLength);
-  std::cout << msgHeader << std::endl;
-
-  if (remaining < 0)
-    return -1;
-
-  if (contentLength > MAX_MSG_BUFFER_SIZE) {
-    bodyBuffer = (char *)malloc(contentLength);
-
-    memcpy(bodyBuffer, body, bodyRead);
-    int receivedSize =
-        recv(client_fd, bodyBuffer + bodyRead, remaining, MSG_WAITALL);
-    bodyBuffer[contentLength] = '\0';
-    body = bodyBuffer;
-
-    free(bodyBuffer);
-
-    remaining -= receivedSize;
-  } else if (remaining > 0) {
-    int receivedSize = recv(client_fd, body + bodyRead, remaining, MSG_WAITALL);
-    remaining -= receivedSize;
-    bodyRead += receivedSize;
-  }
-  for (size_t i = 0; i < uint(bodyRead); i++)
-    printf("%02x ", (unsigned char)body[i]);
-  printf("\n");
-
-  return 0;
-}
-
 int RTSPParser::rtsp_post_pair_setup() {
-  // int header_len = snprintf(header, sizeof(header),
-  //                           "RTSP/1.0 200 OK\r\n"
-  //                           "CSeq: %d\r\n"
-  //                           "Server: AirTunes/366.0\r\n"
-  //                           "Content-Type:
-  //                           application/x-apple-binary-plist\r\n"
-  //                           "Content-Length: %d\r\n"
-  //                           "\r\n",
-  //                           CSeq, (int)plist.size());
+  std::vector<uint8_t> body;
+  std::vector<uint8_t> stateTLV8 = encode_tlv8(0x06, {0x02});
+  std::vector<uint8_t> saltTLV8 = encode_tlv8(0x02, srpHandler_.get_salt());
+  std::vector<uint8_t> publicKeyTLV8 =
+      encode_tlv8(0x03, srpHandler_.get_public_key());
 
+  std::cout << "Succesfully created TLV8 encodings of State, Salt and PK."
+            << std::endl;
+
+  body.insert(body.end(), stateTLV8.begin(), stateTLV8.end());
+  body.insert(body.end(), saltTLV8.begin(), saltTLV8.end());
+  body.insert(body.end(), publicKeyTLV8.begin(), publicKeyTLV8.end());
+
+  int header_len = snprintf(header, sizeof(header),
+                            "RTSP/1.0 200 OK\r\n"
+                            "CSeq: %d\r\n"
+                            "Server: AirTunes/366.0\r\n"
+                            "Content-Type: application/x-apple-binary-plist\r\n"
+                            "Content-Length: %d\r\n"
+                            "\r\n",
+                            CSeq_, (int)body.size());
+
+  send(client_fd_, header, header_len, 0);
+  send(client_fd_, body.data(), body.size(), 0);
   return 0;
 };
 
@@ -285,13 +252,84 @@ int RTSPParser::rtsp_post_pair_verify() {
                             "Content-Type: application/octet-stream\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
-                            CSeq, (int)sizeof(tlv));
+                            CSeq_, (int)sizeof(tlv));
 
-  send(client_fd, header, header_len, 0);
-  send(client_fd, tlv, sizeof(tlv), 0);
+  send(client_fd_, header, header_len, 0);
+  send(client_fd_, tlv, sizeof(tlv), 0);
 
   return 0;
 };
+
+int RTSPParser::get_cseq() {
+  const char *cseq = strstr(msg_, "CSeq:");
+
+  if (!cseq)
+    return -1;
+
+  sscanf(cseq, "CSeq: %d", &CSeq_);
+  return 0;
+}
+
+int RTSPParser::get_content_length() {
+  const char *len = strstr(msg_, "Content-Length:");
+
+  if (!len)
+    return -1;
+
+  sscanf(len, "Content-Length: %d", &contentLength_);
+
+  return 0;
+}
+
+int RTSPParser::get_title() {
+  const char *lineEnd = strstr(msg_, "\r\n");
+  if (!lineEnd)
+    return -1;
+
+  title_ = std::string((const char *)msg_, lineEnd);
+  return 0;
+}
+
+int RTSPParser::get_body() {
+  body_ = strstr(msg_, "\r\n\r\n");
+  if (!body_)
+    return -1;
+  body_ += 4;
+
+  size_t headerLength = body_ - msg_;
+  int bodyRead = messageLength_ - headerLength;
+  int remaining = contentLength_ - bodyRead;
+
+  std::string msgHeader(msg_, headerLength);
+  std::cout << msgHeader << std::endl;
+
+  if (remaining < 0)
+    return -1;
+
+  if (contentLength_ > MAX_MSG_BUFFER_SIZE) {
+    bodyBuffer_ = (char *)malloc(contentLength_);
+
+    memcpy(bodyBuffer_, body_, bodyRead);
+    int receivedSize =
+        recv(client_fd_, bodyBuffer_ + bodyRead, remaining, MSG_WAITALL);
+    bodyBuffer_[contentLength_] = '\0';
+    body_ = bodyBuffer_;
+
+    free(bodyBuffer_);
+
+    remaining -= receivedSize;
+  } else if (remaining > 0) {
+    int receivedSize =
+        recv(client_fd_, body_ + bodyRead, remaining, MSG_WAITALL);
+    remaining -= receivedSize;
+    bodyRead += receivedSize;
+  }
+  for (size_t i = 0; i < uint(bodyRead); i++)
+    printf("%02x ", (unsigned char)body_[i]);
+  printf("\n");
+
+  return 0;
+}
 
 std::unique_ptr<RTSPParser>
 create_rtsp_parser(int client_fd,

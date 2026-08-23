@@ -17,19 +17,19 @@ public:
   int parse_message();
 
 private:
-  int client_fd;
-  int messageLength;
-  int contentLength;
-  int CSeq;
-  char *body;
-  char *bodyBuffer;
-  char *msg;
-  std::string title;
-  std::string msgHeader;
-  PlistWriter plistWriter;
-  SRPHandler srpHandler;
+  int client_fd_;
+  int messageLength_;
+  int contentLength_;
+  int CSeq_;
+  char *body_;
+  char *bodyBuffer_;
+  char *msg_;
+  std::string title_;
+  std::string msgHeader_;
+  PlistWriter plistWriter_;
+  SRPHandler srpHandler_;
   char header[256];
-  std::shared_ptr<CryptoHandler> crypto_handler_;
+  std::shared_ptr<CryptoHandler> cryptoHandler_;
 
   int get_content_length();
   int get_cseq();
