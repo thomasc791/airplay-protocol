@@ -2,6 +2,7 @@
 
 #include "crypto.hpp"
 #include "plist.hpp"
+#include "srp.hpp"
 #include <memory>
 
 #define MAX_MSG_BUFFER_SIZE 2048
@@ -26,6 +27,7 @@ private:
   std::string title;
   std::string msgHeader;
   PlistWriter plistWriter;
+  SRPHandler srpHandler;
   char header[256];
   std::shared_ptr<CryptoHandler> crypto_handler_;
 
