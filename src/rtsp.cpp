@@ -39,9 +39,12 @@ std::vector<uint8_t> encode_tlv8(uint8_t type,
 } // namespace
 
 RTSPParser::RTSPParser(int client_fd,
-                       std::shared_ptr<CryptoHandler> crypto_handler)
+                       std::shared_ptr<CryptoHandler> cryptoHandler,
+                       std::shared_ptr<FeatureFlags> featureFlags,
+                       std::shared_ptr<StatusFlags> statusFlags)
     : client_fd_(client_fd), contentLength_(), CSeq_(), msg_{}, plistWriter_(),
-      srpHandler_(), header{}, cryptoHandler_(crypto_handler) {
+      srpHandler_(), header{}, cryptoHandler_(cryptoHandler),
+      featureFlags_(featureFlags), statusFlags_(statusFlags) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
 }
@@ -108,13 +111,16 @@ std::vector<uint8_t> RTSPParser::create_plist() {
 
   auto plist = plistWriter_.serialize(V::dict({
       {"deviceID", V::string(get_system_mac_address())},
-      {"features", V::uint(0xC340445F8A00)},
-      {"flags", V::uint(0x04)},
+      {"features", V::uint(featureFlags_->getRaw())},
       {"model", V::string("AudioAccessory6,1")},
+      {"gcgl", V::string("0")},
       // {"pk", V::string(crypto_handler_->get_public_hex_string())},
+      {"nameIsFactoryDefault", V::boolean(false)},
       {"pi", V::string("767e31b2-9074-4be0-a3ad-4c0b491877ca")},
       {"protocolVersion", V::string("1.1")},
+      {"password", V::boolean(true)},
       {"sourceVersion", V::string("366.0")},
+      {"statusFlags", V::uint(statusFlags_->getRaw())},
       // {"audioFormats", V::array({V::dict({
       //                      {"type", V::uint(96)},
       //                      {"audioInputFormats", V::uint(0x01000000)},
@@ -128,8 +134,8 @@ int RTSPParser::rtsp_get_options() {
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
-                            "Public: OPTIONS, GET, POST, SETUP, ANNOUNCE, "
-                            "RECORD, PAUSE, FLUSH, TEARDOWN\r\n"
+                            // "Public: OPTIONS, GET, POST, SETUP, ANNOUNCE, "
+                            // "RECORD, PAUSE, FLUSH, TEARDOWN\r\n"
                             "Server: AirTunes/366.0\r\n"
                             "\r\n",
                             CSeq_);
@@ -332,7 +338,9 @@ int RTSPParser::get_body() {
 }
 
 std::unique_ptr<RTSPParser>
-create_rtsp_parser(int client_fd,
-                   std::shared_ptr<CryptoHandler> crypto_handler) {
-  return std::make_unique<RTSPParser>(client_fd, crypto_handler);
+create_rtsp_parser(int client_fd, std::shared_ptr<CryptoHandler> cryptoHandler,
+                   std::shared_ptr<FeatureFlags> featureFlags,
+                   std::shared_ptr<StatusFlags> statusFlags) {
+  return std::make_unique<RTSPParser>(client_fd, cryptoHandler, featureFlags,
+                                      statusFlags);
 }

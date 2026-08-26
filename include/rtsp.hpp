@@ -1,15 +1,19 @@
 #pragma once
 
 #include "crypto.hpp"
+#include "flags.hpp"
 #include "plist.hpp"
 #include "srp.hpp"
+
 #include <memory>
 
 #define MAX_MSG_BUFFER_SIZE 2048
 
 class RTSPParser {
 public:
-  RTSPParser(int client_fd, std::shared_ptr<CryptoHandler> crypto_handler);
+  RTSPParser(int client_fd, std::shared_ptr<CryptoHandler> cryptoHandler,
+             std::shared_ptr<FeatureFlags> featureFlags,
+             std::shared_ptr<StatusFlags> statusFlags);
   ~RTSPParser();
 
   int set_client(int currentClient);
@@ -30,6 +34,8 @@ private:
   SRPHandler srpHandler_;
   char header[256];
   std::shared_ptr<CryptoHandler> cryptoHandler_;
+  std::shared_ptr<FeatureFlags> featureFlags_;
+  std::shared_ptr<StatusFlags> statusFlags_;
 
   int get_content_length();
   int get_cseq();
@@ -47,5 +53,6 @@ private:
 };
 
 std::unique_ptr<RTSPParser>
-create_rtsp_parser(int client_fd,
-                   std::shared_ptr<CryptoHandler> crypto_handler);
+create_rtsp_parser(int client_fd, std::shared_ptr<CryptoHandler> cryptoHandler,
+                   std::shared_ptr<FeatureFlags> featureFlags,
+                   std::shared_ptr<StatusFlags> statusFlags);

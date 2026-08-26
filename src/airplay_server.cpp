@@ -1,5 +1,6 @@
 #include "airplay_server.hpp"
 #include "crypto.hpp"
+#include "flags.hpp"
 #include "utils.hpp"
 
 #include <avahi-client/client.h>
@@ -14,7 +15,7 @@
 #include <unistd.h>
 
 AirPlayServer::AirPlayServer(const std::string &device_name, uint16_t port)
-    : port_(port), device_name_(device_name) {
+    : port_(port), deviceName_(device_name) {
 
   device_id_ = get_system_mac_address();
 }
@@ -23,17 +24,19 @@ AirPlayServer::~AirPlayServer() { stop(); }
 
 bool AirPlayServer::start() {
   mdns_ = create_mdns_service();
-  crypto_handler_ = create_crypto_handler();
+  cryptoHandler_ = create_crypto_handler();
+  featureFlags_ = create_feature_flags();
+  statusFlags_ = create_status_flags();
 
   if (mdns_->start()) {
     if (publish_airplay_service() < 0)
       std::cerr << "Failed to publish airplay service." << std::endl;
     std::cout << "[AirPlayServer] Published AirPlay mDNS service: "
-              << device_name_ << " on port " << 7000 << std::endl;
+              << deviceName_ << " on port " << 7000 << std::endl;
 
     if (publish_raop_service() < 0)
       std::cerr << "Failed to publish raop service." << std::endl;
-    std::cout << "[AirPlayServer] Published RAOP mDNS service: " << device_name_
+    std::cout << "[AirPlayServer] Published RAOP mDNS service: " << deviceName_
               << " on port " << 5000 << std::endl;
   }
 
@@ -44,33 +47,43 @@ bool AirPlayServer::start() {
 
 int AirPlayServer::publish_airplay_service() {
   std::map<std::string, std::string> txt = {
+      {"acl", "0"},
       {"deviceid", device_id_},
+      {"features", featureFlags_->getHex()},
+      {"flags", statusFlags_->getHex()},
+      {"gid", "767e31b2-9074-4be0-a3ad-4c0b491877ca"},
+      {"gcgl", "0"},
       {"model", "AudioAccessory6,1"},
       // {"pk", crypto_handler_->get_public_hex_string()},
-      {"vv", "2"},
-      {"gcgl", "1"},
-      {"igl", "1"},
-      {"srcvers", "366.0"},
+      // {"igl", "0"},
       {"protovers", "1.1"},
-      {"pi", "767e31b2-9074-4be0-a3ad-4c0b491877ca"},
-      {"features", "0x445F8A00,0xC340"},
-      {"flags", "0x4"},
+      {"rsf", "0x0"},
+      {"serialNumber", device_id_},
+      {"srcvers", "366.0"},
   };
-  mdns_->publish_service(device_name_, "_airplay._tcp", 7000, txt);
+  mdns_->publish_service(deviceName_, "_airplay._tcp", 7000, txt);
   return 0;
 }
 
 int AirPlayServer::publish_raop_service() {
   std::map<std::string, std::string> txt = {
       // {"pk", crypto_handler_->get_public_hex_string()},
-      {"ch", "2"},     {"cn", "0,1"},
-      {"et", "0,4"},   {"am", "Linux"},
-      {"tp", "UDP"},   {"md", "2"},
-      {"vn", "65537"}, {"srcvers", "366.0"},
-      {"da", "true"},  {"features", "0x445F8A00,0xC340"},
-      {"sf", "0x4"},   {"deviceid", device_id_},
+      {"ch", "2"},
+      {"cn", "0,1,2"},
+      // {"et", "0,4"},
+      // {"am", "Linux"},
+      // {"tp", "UDP"},
+      // {"md", "2"},
+      // {"vn", "65537"},
+      // {"srcvers", "366.0"},
+      {"pi", "767e31b2-9074-4be0-a3ad-4c0b491877ca"},
+      {"pw", "true"},
+      // {"da", "true"},
+      {"ft", featureFlags_->getHex()},
+      {"sf", statusFlags_->getHex()},
+      // {"deviceid", device_id_},
   };
-  mdns_->publish_service(device_name_, "_raop._tcp", 5000, txt);
+  mdns_->publish_service(deviceName_, "_raop._tcp", 5000, txt);
   return 0;
 }
 
@@ -145,7 +158,8 @@ void AirPlayServer::handle_client(int client_fd) {
   std::cout << "Created new RTSP handler for client with ID: " << client_fd
             << std::endl
             << "Starting new RTSP parser..." << std::endl;
-  rtsp_parser_ = create_rtsp_parser(client_fd, crypto_handler_);
+  rtspParser_ = create_rtsp_parser(client_fd, cryptoHandler_, featureFlags_,
+                                   statusFlags_);
   char buffer[2048] = {0};
   while (running_) {
     memset(buffer, 0, sizeof(buffer));
@@ -156,8 +170,8 @@ void AirPlayServer::handle_client(int client_fd) {
       break;
     }
 
-    rtsp_parser_->set_msg(buffer, bytes_read);
-    rtsp_parser_->parse_message();
+    rtspParser_->set_msg(buffer, bytes_read);
+    rtspParser_->parse_message();
   }
   close(client_fd);
 }

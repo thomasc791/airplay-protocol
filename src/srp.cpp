@@ -65,17 +65,11 @@ E0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF");
 SRPHandler::~SRPHandler() {}
 
 std::vector<uint8_t> SRPHandler::get_salt() {
-  std::vector<uint8_t> salt;
-  BN_bn2bin(s_.get(), salt.data());
-
-  return salt;
+  return pad_to(bn_to_bytes(s_.get()), 16);
 }
 
 std::vector<uint8_t> SRPHandler::get_public_key() {
-  std::vector<uint8_t> pk;
-  BN_bn2bin(B_.get(), pk.data());
-
-  return pk;
+  return pad_to(bn_to_bytes(B_.get()), padLen);
 }
 
 std::vector<uint8_t> SRPHandler::sha512(const std::vector<uint8_t> &data) {
