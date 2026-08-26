@@ -5,6 +5,7 @@
 #include "info_plist.hpp"
 #include "plist.hpp"
 #include "srp.hpp"
+#include "tlv8.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -47,6 +48,7 @@ RTSPParser::RTSPParser(int client_fd,
       featureFlags_(featureFlags), statusFlags_(statusFlags) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
+  tlv8Decoder_ = create_tlv8_decoder();
 }
 
 RTSPParser::~RTSPParser() {}
@@ -221,6 +223,9 @@ int RTSPParser::rtsp_get_info() {
 }
 
 int RTSPParser::rtsp_post_pair_setup() {
+  tlv8Decoder_->reinterpretMessage((const char *)body_, contentLength_);
+  tlv8Decoder_->decode();
+
   std::vector<uint8_t> body;
   std::vector<uint8_t> stateTLV8 = encode_tlv8(0x06, {0x02});
   std::vector<uint8_t> saltTLV8 = encode_tlv8(0x02, srpHandler_.get_salt());

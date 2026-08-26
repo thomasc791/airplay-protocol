@@ -4,6 +4,7 @@
 #include "flags.hpp"
 #include "plist.hpp"
 #include "srp.hpp"
+#include "tlv8.hpp"
 
 #include <memory>
 
@@ -36,6 +37,7 @@ private:
   std::shared_ptr<CryptoHandler> cryptoHandler_;
   std::shared_ptr<FeatureFlags> featureFlags_;
   std::shared_ptr<StatusFlags> statusFlags_;
+  std::unique_ptr<TLV8Decoder> tlv8Decoder_;
 
   int get_content_length();
   int get_cseq();
