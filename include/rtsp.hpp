@@ -32,8 +32,9 @@ private:
   std::string title_;
   std::string msgHeader_;
   PlistWriter plistWriter_;
-  SRPHandler srpHandler_;
   char header[256];
+
+  std::unique_ptr<SRPHandler> srpHandler_;
   std::shared_ptr<CryptoHandler> cryptoHandler_;
   std::shared_ptr<FeatureFlags> featureFlags_;
   std::shared_ptr<StatusFlags> statusFlags_;
@@ -50,6 +51,7 @@ private:
   int rtsp_post_fp_setup();
   int rtsp_get_info();
   int rtsp_post_pair_verify();
+  int rtsp_post_pair_error();
   int rtsp_post_pair_setup();
   int pair_setup_m2();
   int pair_setup_m4();

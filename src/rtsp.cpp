@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <ostream>
+#include <stdexcept>
 #include <sys/socket.h>
 #include <vector>
 
@@ -21,12 +22,13 @@ RTSPParser::RTSPParser(int client_fd,
                        std::shared_ptr<FeatureFlags> featureFlags,
                        std::shared_ptr<StatusFlags> statusFlags)
     : client_fd_(client_fd), contentLength_(), CSeq_(), msg_{}, plistWriter_(),
-      srpHandler_(), header{}, cryptoHandler_(cryptoHandler),
-      featureFlags_(featureFlags), statusFlags_(statusFlags) {
+      header{}, cryptoHandler_(cryptoHandler), featureFlags_(featureFlags),
+      statusFlags_(statusFlags) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
   tlv8Decoder_ = create_tlv8_decoder();
   tlv8Encoder_ = create_tlv8_encoder();
+  srpHandler_ = create_srp_handler();
 }
 
 RTSPParser::~RTSPParser() {}
@@ -212,6 +214,8 @@ int RTSPParser::rtsp_post_pair_setup() {
   if (tlv8State.size() != 1) {
     err = -1;
     std::cerr << "Method size is not correct." << std::endl;
+    rtsp_post_pair_error();
+
     return err;
   }
 
@@ -227,17 +231,20 @@ int RTSPParser::rtsp_post_pair_setup() {
 
     break;
   case 0x03:
-    pair_setup_m4();
+    err = pair_setup_m4();
 
     break;
   case 0x05:
-    pair_setup_m2();
+    err = pair_setup_m2();
 
     break;
   }
 
-  if (err < 0)
+  if (err < 0) {
+    std::cout << "Encountered Error, sending error message" << std::endl;
+    rtsp_post_pair_error();
     return -1;
+  }
 
   body = tlv8Encoder_->get_body();
 
@@ -255,6 +262,13 @@ int RTSPParser::rtsp_post_pair_setup() {
   err = send(client_fd_, header, header_len, 0);
   err = send(client_fd_, body.data(), body.size(), 0);
 
+  std::cout << "Header:\n" << header << std::endl;
+
+  for (auto b : body)
+    printf("%02x ", b);
+
+  std::cout << std::endl;
+
   if (err < 0) {
     std::cerr << "Could not send message." << std::endl;
     return -1;
@@ -266,8 +280,8 @@ int RTSPParser::rtsp_post_pair_setup() {
 int RTSPParser::pair_setup_m2() {
   std::map<TLV8Type_t, std::vector<uint8_t>> messageMap = {
       {TLV8_STATE, {0x02}},
-      {TLV8_SALT, srpHandler_.get_salt()},
-      {TLV8_PK, srpHandler_.get_public_key()}};
+      {TLV8_SALT, srpHandler_->get_salt()},
+      {TLV8_PK, srpHandler_->get_public_key()}};
   int err = tlv8Encoder_->set_map(messageMap);
   err = tlv8Encoder_->encode();
 
@@ -275,17 +289,50 @@ int RTSPParser::pair_setup_m2() {
     std::cerr << "Error encoding M2 message." << std::endl;
     return -1;
   }
-
   return 0;
 }
 
 int RTSPParser::pair_setup_m4() {
-  // to be implemented.
+  int err = srpHandler_->set_A(tlv8Decoder_->readMessage(TLV8_PK));
+  err = srpHandler_->set_M1(tlv8Decoder_->readMessage(TLV8_PROOF));
+  if (err < 0) {
+    rtsp_post_pair_error();
+    throw std::runtime_error("Error setting BigNum values");
+  }
 
-  return 0;
+  std::cout << "Set M4 values." << std::endl;
+
+  srpHandler_->client_proof();
+  if (!srpHandler_->validate_M1()) {
+    std::cout << "Error: M1 server and M1 client are not the same" << std::endl;
+    rtsp_post_pair_error();
+
+    return -1;
+  }
+
+  err = srpHandler_->create_M2();
+  if (err < 0) {
+    rtsp_post_pair_error();
+    return err;
+  }
+
+  std::map<TLV8Type_t, std::vector<uint8_t>> messageMap = {
+      {TLV8_STATE, {0x04}}, {TLV8_PROOF, srpHandler_->get_proof()}};
+
+  err = tlv8Encoder_->set_map(messageMap);
+  err = tlv8Encoder_->encode();
+
+  if (err < 0) {
+    std::cerr << "Error encoding M2 message." << std::endl;
+    rtsp_post_pair_error();
+    return err;
+  }
+
+  return err;
 }
 
 int RTSPParser::rtsp_post_pair_verify() {
+  std::cerr << "Encountered error, authentication error." << std::endl;
   uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2
                    0x07, 0x01, 0x02}; // Error = Authentication
 
@@ -302,6 +349,24 @@ int RTSPParser::rtsp_post_pair_verify() {
 
   return 0;
 };
+
+int RTSPParser::rtsp_post_pair_error() {
+  uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2
+                   0x07, 0x01, 0x02}; // Error = Authentication
+
+  int header_len = snprintf(header, sizeof(header),
+                            "RTSP/1.0 200 OK\r\n"
+                            "CSeq: %d\r\n"
+                            "Content-Type: application/octet-stream\r\n"
+                            "Content-Length: %d\r\n"
+                            "\r\n",
+                            CSeq_, (int)sizeof(tlv));
+
+  send(client_fd_, header, header_len, 0);
+  send(client_fd_, tlv, sizeof(tlv), 0);
+
+  return 0;
+}
 
 int RTSPParser::get_cseq() {
   const char *cseq = strstr(msg_, "CSeq:");

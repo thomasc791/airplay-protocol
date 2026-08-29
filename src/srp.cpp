@@ -1,18 +1,24 @@
 #include "srp.hpp"
+#include <cstdio>
+#include <iostream>
+#include <memory>
 #include <openssl/bn.h>
 #include <openssl/evp.h>
+#include <stdexcept>
 #include <vector>
 
 constexpr int SALT_BITS = 128;
 constexpr int RAND_BITS = 512;
 
 SRPHandler::SRPHandler()
-    : N_(nullptr, BN_free), g_(nullptr, BN_free), x_(nullptr, BN_free),
-      k_(nullptr, BN_free), s_(nullptr, BN_free), v_(nullptr, BN_free),
-      b_(nullptr, BN_free), B_(nullptr, BN_free), a_(nullptr, BN_free),
-      A_(nullptr, BN_free) {
+    : ctx_(nullptr, BN_CTX_free), N_(nullptr, BN_free), g_(nullptr, BN_free),
+      x_(nullptr, BN_free), k_(nullptr, BN_free), s_(nullptr, BN_free),
+      v_(nullptr, BN_free), b_(nullptr, BN_free), B_(nullptr, BN_free),
+      a_(nullptr, BN_free), A_(nullptr, BN_free), u_(nullptr, BN_free),
+      S_(nullptr, BN_free), K_(nullptr, BN_free), M1_(nullptr, BN_free),
+      M1Expected_(nullptr, BN_free), M2_(nullptr, BN_free) {
 
-  CtxPtr ctx(BN_CTX_new(), BN_CTX_free);
+  ctx_ = CtxPtr(BN_CTX_new(), BN_CTX_free);
 
   BIGNUM *rawN = nullptr;
   BN_hex2bn(&rawN, "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E08\
@@ -40,26 +46,35 @@ E0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF");
   k_ = H({N_.get(), g_.get()}, true);
 
   s_ = make_bn();
-  BN_rand(s_.get(), SALT_BITS, -1, 0);
-
-  x_ = H({s_.get(), H("Pair-Setup", "3939", ":").get()});
-
   v_ = make_bn();
-  BN_mod_exp(v_.get(), g_.get(), x_.get(), N_.get(), ctx.get());
-
-  b_ = make_bn();
-  BN_rand(b_.get(), RAND_BITS, -1, 0);
 
   BnPtr interAB = make_bn();
   BnPtr interBB = make_bn();
   BnPtr interCB = make_bn();
 
-  BN_mul(interAB.get(), k_.get(), v_.get(), ctx.get());
-  BN_mod_exp(interBB.get(), g_.get(), b_.get(), N_.get(), ctx.get());
+  b_ = make_bn();
+  B_ = make_bn();
+  a_ = make_bn();
+  S_ = make_bn();
+
+  BN_rand(s_.get(), SALT_BITS, -1, 0);
+
+  std::vector<uint8_t> innerDigest =
+      H_bytes(username_ + std::string(":") + "3939");
+  std::vector<uint8_t> saltBytes =
+      get_salt(); // the padded 16-byte value, same as sent on wire
+  std::vector<uint8_t> xDigest = H_bytes({saltBytes, innerDigest});
+  x_ = BnPtr(BN_bin2bn(xDigest.data(), xDigest.size(), nullptr), BN_free);
+
+  BN_mod_exp(v_.get(), g_.get(), x_.get(), N_.get(), ctx_.get());
+
+  BN_rand(b_.get(), RAND_BITS, -1, 0);
+
+  BN_mul(interAB.get(), k_.get(), v_.get(), ctx_.get());
+  BN_mod_exp(interBB.get(), g_.get(), b_.get(), N_.get(), ctx_.get());
   BN_add(interCB.get(), interAB.get(), interBB.get());
 
-  B_ = make_bn();
-  BN_mod(B_.get(), interCB.get(), N_.get(), ctx.get());
+  BN_mod(B_.get(), interCB.get(), N_.get(), ctx_.get());
 }
 
 SRPHandler::~SRPHandler() {}
@@ -75,25 +90,14 @@ std::vector<uint8_t> SRPHandler::get_public_key() {
 std::vector<uint8_t> SRPHandler::sha512(const std::vector<uint8_t> &data) {
   std::vector<uint8_t> digest(EVP_MD_size(EVP_sha512()));
   unsigned int len = 0;
+
   EVP_Digest(data.data(), data.size(), digest.data(), &len, EVP_sha512(),
              nullptr);
   return digest;
 }
 
 BnPtr SRPHandler::H(const std::vector<BIGNUM *> &args, bool pad) {
-  std::vector<uint8_t> byteArgs = {};
-  for (auto arg : args) {
-    std::vector<uint8_t> currentByteArg = bn_to_bytes(arg);
-
-    if (pad) {
-      currentByteArg = pad_to(currentByteArg, padLen);
-    }
-
-    byteArgs.insert(byteArgs.end(), currentByteArg.begin(),
-                    currentByteArg.end());
-  }
-
-  std::vector<uint8_t> digest = sha512(byteArgs);
+  std::vector<uint8_t> digest = H_bytes(args, pad);
   return BnPtr(BN_bin2bn(digest.data(), digest.size(), nullptr), BN_free);
 }
 
@@ -110,6 +114,31 @@ BnPtr SRPHandler::H(const std::string &a, const std::string &b,
   return BnPtr(BN_bin2bn(digest.data(), digest.size(), nullptr), BN_free);
 }
 
+std::vector<uint8_t> SRPHandler::H_bytes(const std::vector<BIGNUM *> &args,
+                                         bool pad) {
+  std::vector<uint8_t> byteArgs;
+  for (auto arg : args) {
+    std::vector<uint8_t> chunk = bn_to_bytes(arg);
+    if (pad)
+      chunk = pad_to(chunk, padLen);
+
+    byteArgs.insert(byteArgs.end(), chunk.begin(), chunk.end());
+  }
+  return sha512(byteArgs);
+}
+
+std::vector<uint8_t>
+SRPHandler::H_bytes(const std::vector<std::vector<uint8_t>> &parts) {
+  std::vector<uint8_t> byteArgs;
+  for (auto &p : parts)
+    byteArgs.insert(byteArgs.end(), p.begin(), p.end());
+  return sha512(byteArgs);
+}
+
+std::vector<uint8_t> SRPHandler::H_bytes(const std::string &s) {
+  return sha512(std::vector<uint8_t>(s.begin(), s.end()));
+}
+
 std::vector<uint8_t> SRPHandler::bn_to_bytes(BIGNUM *bn) {
   std::vector<uint8_t> buf(BN_num_bytes(bn));
   BN_bn2bin(bn, buf.data());
@@ -122,4 +151,102 @@ std::vector<uint8_t> SRPHandler::pad_to(std::vector<uint8_t> b, size_t width) {
   }
 
   return b;
+}
+
+int SRPHandler::set_A(std::vector<uint8_t> A) {
+  BIGNUM *raw = BN_bin2bn(A.data(), A.size(), nullptr);
+  if (!raw)
+    return -1;
+
+  A_ = BnPtr(raw, BN_free);
+  return 0;
+}
+
+int SRPHandler::set_M1(std::vector<uint8_t> M1) {
+  BIGNUM *raw = BN_bin2bn(M1.data(), M1.size(), nullptr);
+  if (!raw)
+    return -1;
+
+  M1_ = BnPtr(raw, BN_free);
+  return 0;
+}
+
+int SRPHandler::client_proof() {
+  BnPtr interAS = make_bn();
+  BnPtr interBS = make_bn();
+  BnPtr interCS = make_bn();
+
+  u_ = H({A_.get(), B_.get()}, true);
+
+  BN_mod_exp(interAS.get(), v_.get(), u_.get(), N_.get(), ctx_.get());
+  BN_mul(interBS.get(), A_.get(), interAS.get(), ctx_.get());
+  BN_mod_exp(interCS.get(), interBS.get(), b_.get(), N_.get(), ctx_.get());
+  int err = BN_mod(S_.get(), interCS.get(), N_.get(), ctx_.get());
+
+  if (err < 0)
+    throw std::runtime_error("Error creating S");
+
+  std::vector<uint8_t> KBytes = H_bytes({S_.get()});
+  BIGNUM *Kraw = BN_bin2bn(KBytes.data(), KBytes.size(), nullptr);
+  if (!Kraw) {
+    std::cerr << "Could not create K" << std::endl;
+    return -1;
+  }
+  K_ = BnPtr(Kraw, BN_free);
+
+  std::vector<uint8_t> hN = H_bytes({N_.get()});
+  std::vector<uint8_t> hg = H_bytes({g_.get()});
+  std::vector<uint8_t> hNxorHg(hN.size());
+  for (size_t i = 0; i < hN.size(); i++)
+    hNxorHg[i] = hN[i] ^ hg[i];
+
+  std::vector<uint8_t> sBytes = get_salt();
+  std::vector<uint8_t> ABytes = pad_to(bn_to_bytes(A_.get()), padLen);
+  std::vector<uint8_t> BBytes = get_public_key();
+
+  std::vector<uint8_t> M1ExpectedBytes =
+      H_bytes({hNxorHg, H_bytes(username_), sBytes, ABytes, BBytes, KBytes});
+
+  BIGNUM *rawM1Expected =
+      BN_bin2bn(M1ExpectedBytes.data(), M1ExpectedBytes.size(), nullptr);
+  if (!rawM1Expected)
+    return -1;
+
+  M1Expected_ = BnPtr(rawM1Expected, BN_free);
+
+  return 0;
+}
+
+bool SRPHandler::validate_M1() {
+  std::vector<uint8_t> M1ExpectedBytes(BN_num_bytes(M1Expected_.get()));
+  std::vector<uint8_t> M1Bytes(BN_num_bytes(M1_.get()));
+
+  BN_bn2bin(M1Expected_.get(), M1ExpectedBytes.data());
+
+  BN_bn2bin(M1_.get(), M1Bytes.data());
+
+  return (M1ExpectedBytes == M1Bytes);
+}
+
+int SRPHandler::create_M2() {
+  std::vector<uint8_t> ABytes = pad_to(bn_to_bytes(M1_.get()), padLen);
+  std::vector<uint8_t> M1Bytes = pad_to(bn_to_bytes(M1_.get()), 64);
+  std::vector<uint8_t> KBytes = bn_to_bytes(K_.get());
+
+  std::vector<uint8_t> M2Bytes = H_bytes({ABytes, M1Bytes, KBytes});
+  BIGNUM *M2raw = BN_bin2bn(M2Bytes.data(), M2Bytes.size(), nullptr);
+
+  if (!M2raw) {
+    std::cerr << "Could not create M2" << std::endl;
+    return -1;
+  }
+  M2_ = BnPtr(M2raw, BN_free);
+
+  return 0;
+}
+
+std::vector<uint8_t> SRPHandler::get_proof() { return bn_to_bytes(M2_.get()); }
+
+std::unique_ptr<SRPHandler> create_srp_handler() {
+  return std::make_unique<SRPHandler>();
 }
