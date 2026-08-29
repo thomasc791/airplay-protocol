@@ -38,6 +38,7 @@ private:
   std::shared_ptr<FeatureFlags> featureFlags_;
   std::shared_ptr<StatusFlags> statusFlags_;
   std::unique_ptr<TLV8Decoder> tlv8Decoder_;
+  std::unique_ptr<TLV8Encoder> tlv8Encoder_;
 
   int get_content_length();
   int get_cseq();
@@ -50,6 +51,8 @@ private:
   int rtsp_get_info();
   int rtsp_post_pair_verify();
   int rtsp_post_pair_setup();
+  int pair_setup_m2();
+  int pair_setup_m4();
 
   std::vector<uint8_t> create_plist();
 };

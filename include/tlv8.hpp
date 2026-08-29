@@ -5,16 +5,16 @@
 #include <memory>
 #include <vector>
 
-enum TLV8Type : uint8_t {
-  METHOD = 0x00,
-  IDENTIFIER = 0x01,
-  SALT = 0x02,
-  PK = 0x03,
-  PROOF = 0x04,
-  ENCRYPTED_DATA = 0x05,
-  STATE = 0x06,
-  ERROR = 0x07,
-  SIGNATURE = 0x0a
+enum TLV8Type_t : uint8_t {
+  TLV8_METHOD = 0x00,
+  TLV8_IDENTIFIER = 0x01,
+  TLV8_SALT = 0x02,
+  TLV8_PK = 0x03,
+  TLV8_PROOF = 0x04,
+  TLV8_ENCRYPTED_DATA = 0x05,
+  TLV8_STATE = 0x06,
+  TLV8_ERROR = 0x07,
+  TLV8_SIGNATURE = 0x0a
 };
 
 class TLV8Decoder {
@@ -24,6 +24,7 @@ public:
 
   void reinterpretMessage(const char *body, size_t len);
   void decode();
+  std::vector<uint8_t> readMessage(const TLV8Type_t type);
 
 private:
   std::vector<uint8_t> message_;
@@ -32,12 +33,32 @@ private:
   uint8_t len_;
   size_t curr_;
   bool longMessage_;
-  TLV8Type type_;
-  std::map<TLV8Type, std::vector<uint8_t>> messageDictionary_;
+  TLV8Type_t type_;
+  std::map<TLV8Type_t, std::vector<uint8_t>> messageDictionary_;
 
   void reset();
   std::vector<uint8_t> read(size_t to);
   uint8_t read();
 };
 
+class TLV8Encoder {
+public:
+  TLV8Encoder();
+  ~TLV8Encoder();
+
+  int set_map(std::map<TLV8Type_t, std::vector<uint8_t>> map);
+  int encode();
+  std::vector<uint8_t> get_body();
+
+private:
+  std::vector<uint8_t> body_;
+  size_t curr_;
+  std::map<TLV8Type_t, std::vector<uint8_t>> messageMap_;
+
+  void reset();
+  int input_long_message(uint8_t type, std::vector<uint8_t> message);
+  int input_short_message(uint8_t type, std::vector<uint8_t> message);
+};
+
 std::unique_ptr<TLV8Decoder> create_tlv8_decoder();
+std::unique_ptr<TLV8Encoder> create_tlv8_encoder();

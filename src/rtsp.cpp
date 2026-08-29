@@ -10,34 +10,11 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <sys/socket.h>
 #include <vector>
-
-namespace {
-std::vector<uint8_t> encode_tlv8(uint8_t type,
-                                 const std::vector<uint8_t> &value) {
-  std::vector<uint8_t> out;
-
-  if (value.empty()) {
-    out.push_back(type);
-    out.push_back(0);
-    return out;
-  }
-  size_t offset = 0;
-  while (offset < value.size()) {
-    size_t chunk = std::min(value.size() - offset, size_t(255));
-    out.push_back(type);
-    out.push_back(static_cast<uint8_t>(chunk));
-    out.insert(out.end(), value.begin() + offset,
-               value.begin() + offset + chunk);
-    offset += chunk;
-  }
-
-  return out;
-}
-} // namespace
 
 RTSPParser::RTSPParser(int client_fd,
                        std::shared_ptr<CryptoHandler> cryptoHandler,
@@ -49,6 +26,7 @@ RTSPParser::RTSPParser(int client_fd,
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
   tlv8Decoder_ = create_tlv8_decoder();
+  tlv8Encoder_ = create_tlv8_encoder();
 }
 
 RTSPParser::~RTSPParser() {}
@@ -225,19 +203,43 @@ int RTSPParser::rtsp_get_info() {
 int RTSPParser::rtsp_post_pair_setup() {
   tlv8Decoder_->reinterpretMessage((const char *)body_, contentLength_);
   tlv8Decoder_->decode();
+  auto tlv8State = tlv8Decoder_->readMessage(TLV8_STATE);
+
+  std::cout << "Decoding message." << std::endl;
+
+  int err = 0;
+
+  if (tlv8State.size() != 1) {
+    err = -1;
+    std::cerr << "Method size is not correct." << std::endl;
+    return err;
+  }
 
   std::vector<uint8_t> body;
-  std::vector<uint8_t> stateTLV8 = encode_tlv8(0x06, {0x02});
-  std::vector<uint8_t> saltTLV8 = encode_tlv8(0x02, srpHandler_.get_salt());
-  std::vector<uint8_t> publicKeyTLV8 =
-      encode_tlv8(0x03, srpHandler_.get_public_key());
+  uint8_t currentState = tlv8Decoder_->readMessage(TLV8_STATE)[0];
 
-  std::cout << "Succesfully created TLV8 encodings of State, Salt and PK."
-            << std::endl;
+  printf("Method: %02x\n", currentState);
 
-  body.insert(body.end(), stateTLV8.begin(), stateTLV8.end());
-  body.insert(body.end(), saltTLV8.begin(), saltTLV8.end());
-  body.insert(body.end(), publicKeyTLV8.begin(), publicKeyTLV8.end());
+  switch (currentState) {
+
+  case 0x01:
+    err = pair_setup_m2();
+
+    break;
+  case 0x03:
+    pair_setup_m4();
+
+    break;
+  case 0x05:
+    pair_setup_m2();
+
+    break;
+  }
+
+  if (err < 0)
+    return -1;
+
+  body = tlv8Encoder_->get_body();
 
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
@@ -248,10 +250,40 @@ int RTSPParser::rtsp_post_pair_setup() {
                             "\r\n",
                             CSeq_, (int)body.size());
 
-  send(client_fd_, header, header_len, 0);
-  send(client_fd_, body.data(), body.size(), 0);
+  std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
+
+  err = send(client_fd_, header, header_len, 0);
+  err = send(client_fd_, body.data(), body.size(), 0);
+
+  if (err < 0) {
+    std::cerr << "Could not send message." << std::endl;
+    return -1;
+  }
+
   return 0;
 };
+
+int RTSPParser::pair_setup_m2() {
+  std::map<TLV8Type_t, std::vector<uint8_t>> messageMap = {
+      {TLV8_STATE, {0x02}},
+      {TLV8_SALT, srpHandler_.get_salt()},
+      {TLV8_PK, srpHandler_.get_public_key()}};
+  int err = tlv8Encoder_->set_map(messageMap);
+  err = tlv8Encoder_->encode();
+
+  if (err < 0) {
+    std::cerr << "Error encoding M2 message." << std::endl;
+    return -1;
+  }
+
+  return 0;
+}
+
+int RTSPParser::pair_setup_m4() {
+  // to be implemented.
+
+  return 0;
+}
 
 int RTSPParser::rtsp_post_pair_verify() {
   uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2
