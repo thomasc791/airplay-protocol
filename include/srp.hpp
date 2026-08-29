@@ -54,6 +54,7 @@ private:
   BnPtr M1Expected_;
   BnPtr M2_;
 
+  std::vector<uint8_t> rawA_, rawM1_, rawK_;
   std::string username_ = "Pair-Setup";
 
   size_t padLen;

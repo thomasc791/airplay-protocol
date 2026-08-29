@@ -165,7 +165,7 @@ void AirPlayServer::handle_client(int client_fd) {
     memset(buffer, 0, sizeof(buffer));
     ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
 
-    if (bytes_read < 0) {
+    if (bytes_read <= 0) {
       std::cout << "Client " << client_fd << " disconnected." << std::endl;
       break;
     }

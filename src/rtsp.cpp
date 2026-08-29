@@ -10,7 +10,6 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
-#include <map>
 #include <memory>
 #include <ostream>
 #include <stdexcept>
@@ -73,7 +72,22 @@ int RTSPParser::parse_message() {
   } else if (strstr(msg_, "POST /pair-verify")) {
     printf("POST /pair-verify\n");
     rtsp_post_pair_verify();
+  } else {
+    std::cout
+        << "[RTSPParser] ONBEKEND OF VERSLEUTELD BERICHT ONTVANGEN! Lengte: "
+        << messageLength_ << std::endl;
+    std::cout << "Ruwe hex data:" << std::endl;
+    for (int i = 0; i < messageLength_; i++) {
+      printf("%02x ", (unsigned char)msg_[i]);
+      // Print maximaal de eerste 64 bytes om je terminal overzichtelijk te
+      // houden
+      if (i >= 64) {
+        printf("... \n");
+        break;
+      }
+    }
   }
+  printf("\n");
 
   memset(msg_, 0, MAX_MSG_BUFFER_SIZE);
   messageLength_ = 0;
@@ -194,11 +208,6 @@ int RTSPParser::rtsp_get_info() {
   if (send(client_fd_, plist.data(), plist.size(), 0) < 0)
     std::cerr << "[RTSPParser] Header not sent correctly!" << std::endl;
 
-  std::cout << header << std::endl;
-  for (size_t i = 0; i < plist.size(); i++)
-    printf("%02x ", plist[i]);
-  std::cout << std::endl;
-
   return 0;
 }
 
@@ -252,7 +261,7 @@ int RTSPParser::rtsp_post_pair_setup() {
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
                             "Server: AirTunes/366.0\r\n"
-                            "Content-Type: application/x-apple-binary-plist\r\n"
+                            "Content-Type: application/pairing+tlv8\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
                             CSeq_, (int)body.size());
@@ -261,13 +270,6 @@ int RTSPParser::rtsp_post_pair_setup() {
 
   err = send(client_fd_, header, header_len, 0);
   err = send(client_fd_, body.data(), body.size(), 0);
-
-  std::cout << "Header:\n" << header << std::endl;
-
-  for (auto b : body)
-    printf("%02x ", b);
-
-  std::cout << std::endl;
 
   if (err < 0) {
     std::cerr << "Could not send message." << std::endl;
@@ -278,7 +280,7 @@ int RTSPParser::rtsp_post_pair_setup() {
 };
 
 int RTSPParser::pair_setup_m2() {
-  std::map<TLV8Type_t, std::vector<uint8_t>> messageMap = {
+  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
       {TLV8_STATE, {0x02}},
       {TLV8_SALT, srpHandler_->get_salt()},
       {TLV8_PK, srpHandler_->get_public_key()}};
@@ -316,8 +318,11 @@ int RTSPParser::pair_setup_m4() {
     return err;
   }
 
-  std::map<TLV8Type_t, std::vector<uint8_t>> messageMap = {
-      {TLV8_STATE, {0x04}}, {TLV8_PROOF, srpHandler_->get_proof()}};
+  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
+      {TLV8_STATE, {0x04}},
+      // {TLV8_PK, srpHandler_->get_public_key()},
+      {TLV8_PROOF, srpHandler_->get_proof()},
+  };
 
   err = tlv8Encoder_->set_map(messageMap);
   err = tlv8Encoder_->encode();
@@ -339,7 +344,7 @@ int RTSPParser::rtsp_post_pair_verify() {
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
-                            "Content-Type: application/octet-stream\r\n"
+                            "Content-Type: application/pairing+tlv8\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
                             CSeq_, (int)sizeof(tlv));
@@ -357,7 +362,7 @@ int RTSPParser::rtsp_post_pair_error() {
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
-                            "Content-Type: application/octet-stream\r\n"
+                            "Content-Type: application/pairing+tlv8\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
                             CSeq_, (int)sizeof(tlv));
@@ -422,8 +427,6 @@ int RTSPParser::get_body() {
         recv(client_fd_, bodyBuffer_ + bodyRead, remaining, MSG_WAITALL);
     bodyBuffer_[contentLength_] = '\0';
     body_ = bodyBuffer_;
-
-    free(bodyBuffer_);
 
     remaining -= receivedSize;
   } else if (remaining > 0) {

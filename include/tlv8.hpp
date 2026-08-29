@@ -46,14 +46,14 @@ public:
   TLV8Encoder();
   ~TLV8Encoder();
 
-  int set_map(std::map<TLV8Type_t, std::vector<uint8_t>> map);
+  int set_map(std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> map);
   int encode();
   std::vector<uint8_t> get_body();
 
 private:
   std::vector<uint8_t> body_;
   size_t curr_;
-  std::map<TLV8Type_t, std::vector<uint8_t>> messageMap_;
+  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap_;
 
   void reset();
   int input_long_message(uint8_t type, std::vector<uint8_t> message);

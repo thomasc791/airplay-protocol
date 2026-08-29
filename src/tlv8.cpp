@@ -24,15 +24,15 @@ void TLV8Decoder::decode() {
     body_.clear();
 
     type_ = TLV8Type_t(read());
-    len_ = read();
+    len_ = (size_t)read();
 
     if (len_ == 1) {
       body_ = {read()};
     } else {
-      body_ = read(len_);
+      body_ = read((size_t)len_);
     }
 
-    auto [_, success] = messageDictionary_.emplace(type_, body_);
+    auto [_, success] = messageDictionary_.try_emplace(type_, body_);
     if (!success) {
       messageDictionary_[type_].insert(messageDictionary_[type_].end(),
                                        body_.begin(), body_.end());
@@ -85,7 +85,8 @@ void TLV8Decoder::reset() {
 TLV8Encoder::TLV8Encoder() : curr_(0), messageMap_({}) {}
 TLV8Encoder::~TLV8Encoder() {}
 
-int TLV8Encoder::set_map(std::map<TLV8Type_t, std::vector<uint8_t>> m) {
+int TLV8Encoder::set_map(
+    std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> m) {
   if (m.empty()) {
     std::cerr << "Setting message map to empty map. Quitting." << std::endl;
     return -1;

@@ -84,7 +84,7 @@ std::vector<uint8_t> SRPHandler::get_salt() {
 }
 
 std::vector<uint8_t> SRPHandler::get_public_key() {
-  return pad_to(bn_to_bytes(B_.get()), padLen);
+  return bn_to_bytes(B_.get());
 }
 
 std::vector<uint8_t> SRPHandler::sha512(const std::vector<uint8_t> &data) {
@@ -159,6 +159,8 @@ int SRPHandler::set_A(std::vector<uint8_t> A) {
     return -1;
 
   A_ = BnPtr(raw, BN_free);
+
+  rawA_ = A;
   return 0;
 }
 
@@ -168,6 +170,7 @@ int SRPHandler::set_M1(std::vector<uint8_t> M1) {
     return -1;
 
   M1_ = BnPtr(raw, BN_free);
+  rawM1_ = M1;
   return 0;
 }
 
@@ -186,8 +189,8 @@ int SRPHandler::client_proof() {
   if (err < 0)
     throw std::runtime_error("Error creating S");
 
-  std::vector<uint8_t> KBytes = H_bytes({S_.get()});
-  BIGNUM *Kraw = BN_bin2bn(KBytes.data(), KBytes.size(), nullptr);
+  rawK_ = H_bytes({S_.get()});
+  BIGNUM *Kraw = BN_bin2bn(rawK_.data(), rawK_.size(), nullptr);
   if (!Kraw) {
     std::cerr << "Could not create K" << std::endl;
     return -1;
@@ -201,11 +204,11 @@ int SRPHandler::client_proof() {
     hNxorHg[i] = hN[i] ^ hg[i];
 
   std::vector<uint8_t> sBytes = get_salt();
-  std::vector<uint8_t> ABytes = pad_to(bn_to_bytes(A_.get()), padLen);
+  std::vector<uint8_t> ABytes = bn_to_bytes(A_.get());
   std::vector<uint8_t> BBytes = get_public_key();
 
   std::vector<uint8_t> M1ExpectedBytes =
-      H_bytes({hNxorHg, H_bytes(username_), sBytes, ABytes, BBytes, KBytes});
+      H_bytes({hNxorHg, H_bytes(username_), sBytes, ABytes, BBytes, rawK_});
 
   BIGNUM *rawM1Expected =
       BN_bin2bn(M1ExpectedBytes.data(), M1ExpectedBytes.size(), nullptr);
@@ -225,15 +228,19 @@ bool SRPHandler::validate_M1() {
 
   BN_bn2bin(M1_.get(), M1Bytes.data());
 
+  for (auto b : M1ExpectedBytes)
+    printf("%02x ", b);
+  std::cout << std::endl;
+  for (auto b : M1Bytes)
+    printf("%02x ", b);
+  std::cout << std::endl;
+
   return (M1ExpectedBytes == M1Bytes);
 }
 
 int SRPHandler::create_M2() {
-  std::vector<uint8_t> ABytes = pad_to(bn_to_bytes(M1_.get()), padLen);
-  std::vector<uint8_t> M1Bytes = pad_to(bn_to_bytes(M1_.get()), 64);
-  std::vector<uint8_t> KBytes = bn_to_bytes(K_.get());
-
-  std::vector<uint8_t> M2Bytes = H_bytes({ABytes, M1Bytes, KBytes});
+  std::vector<uint8_t> M2Bytes = H_bytes({rawA_, rawM1_, rawK_});
+  // M2_ = H({A_.get(), M1_.get(), K_.get()});
   BIGNUM *M2raw = BN_bin2bn(M2Bytes.data(), M2Bytes.size(), nullptr);
 
   if (!M2raw) {
