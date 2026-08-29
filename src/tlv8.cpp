@@ -22,61 +22,18 @@ void TLV8Decoder::decode() {
     type_ = TLV8Type(read());
     len_ = read();
 
-    if (len_ == 0xff) {
-      while (len_ == 0xff) {
-        std::vector<uint8_t> readBody = read(255);
-        body_.insert(body_.end(), readBody.begin(), readBody.end());
-        if (type_ != TLV8Type(read())) {
-          std::cerr << "Error continueing message." << std::endl;
-          return;
-        }
-
-        if (curr_ >= message_.size())
-          break;
-
-        len_ = read();
-      }
-
-      std::vector<uint8_t> readBody = read(len_);
-      body_.insert(body_.end(), readBody.begin(), readBody.end());
-    } else if (len_ == 1) {
+    if (len_ == 1) {
       body_ = {read()};
     } else {
       body_ = read(len_);
     }
 
-    messageDictionary_[type_] = body_;
+    auto [_, success] = messageDictionary_.emplace(type_, body_);
+    if (!success) {
+      messageDictionary_[type_].insert(messageDictionary_[type_].begin(),
+                                       body_.begin(), body_.end());
+    }
   }
-
-  // switch (message_[curr_ - 1]) {
-  // case 0x00:
-  //   std::cout << "Method" << std::endl;
-  //   break;
-  // case 0x01:
-  //   std::cout << "Identifier" << std::endl;
-  //   break;
-  // case 0x02:
-  //   std::cout << "Salt" << std::endl;
-  //   break;
-  // case 0x03:
-  //   std::cout << "PublicKey" << std::endl;
-  //   break;
-  // case 0x04:
-  //   std::cout << "Proof" << std::endl;
-  //   break;
-  // case 0x05:
-  //   std::cout << "EncryptedData" << std::endl;
-  //   break;
-  // case 0x06:
-  //   std::cout << "State" << std::endl;
-  //   break;
-  // case 0x07:
-  //   std::cout << "Error" << std::endl;
-  //   break;
-  // case 0x0a:
-  //   std::cout << "Signature" << std::endl;
-  //   break;
-  // }
 
   return;
 }
