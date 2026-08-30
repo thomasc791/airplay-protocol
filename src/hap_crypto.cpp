@@ -86,6 +86,10 @@ int HAPCrypto::M5_verification(std::vector<uint8_t> identifier,
   messageInfo.insert(messageInfo.end(), identifier.begin(), identifier.end());
   messageInfo.insert(messageInfo.end(), ltpk.begin(), ltpk.end());
 
+  if (ltpk.size() != 32)
+    throw std::runtime_error(
+        "Long Term Public Key is not 32 bytes long. Quitting");
+
   EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, nullptr,
                                                ltpk.data(), ltpk.size());
 

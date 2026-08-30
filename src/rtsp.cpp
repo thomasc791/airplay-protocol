@@ -344,18 +344,25 @@ int RTSPParser::pair_setup_m5() {
   tlv8Decoder_->set_sub_message(blob);
   tlv8Decoder_->decode_sub();
 
+  err = hapHandler_->hkdf_sha512("Pair-Setup-Controller-Sign-Salt",
+                                 "Pair-Setup-Controller-Sign-Info");
+
+  int ok = hapHandler_->M5_verification(
+      tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER),
+      tlv8Decoder_->read_sub_message(TLV8_PK),
+      tlv8Decoder_->read_sub_message(TLV8_SIGNATURE));
+
+  if (!ok) {
+    std::cerr << "M5 Verification not OK. Quitting." << std::endl;
+    rtsp_post_pair_error();
+
+    return -1;
+  }
+
   pairingManager_->add_paired_device(
       {tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER),
        {tlv8Decoder_->read_sub_message(TLV8_PK),
         tlv8Decoder_->read_sub_message(TLV8_SIGNATURE)}});
-
-  err = hapHandler_->hkdf_sha512("Pair-Setup-Controller-Sign-Salt",
-                                 "Pair-Setup-Controller-Sign-Info");
-
-  std::cout << hapHandler_->M5_verification(
-      tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER),
-      tlv8Decoder_->read_sub_message(TLV8_PK),
-      tlv8Decoder_->read_sub_message(TLV8_SIGNATURE));
 
   return err;
 }

@@ -69,31 +69,31 @@ void PairingManager::add_paired_device(
 
 std::pair<std::vector<uint8_t>, std::vector<std::vector<uint8_t>>>
 PairingManager::read_pair(std::stringstream &pair) {
-  std::string key;
-  std::string publicKey;
   std::string identifier;
+  std::string publicKey;
+  std::string signature;
   std::string kv;
   size_t i = 0;
   while (std::getline(pair, kv, ',')) {
     switch (i) {
     case 0:
-      key = kv;
+      identifier = kv;
       break;
     case 1:
       publicKey = kv;
       break;
     case 2:
-      identifier = kv;
+      signature = kv;
       break;
     }
     i++;
   }
 
-  std::vector<uint8_t> keyVec = from_hex(key);
-  std::vector<uint8_t> pkVec = from_hex(publicKey);
   std::vector<uint8_t> identifierVec = from_hex(identifier);
+  std::vector<uint8_t> pkVec = from_hex(publicKey);
+  std::vector<uint8_t> signatureVec = from_hex(signature);
 
-  return {keyVec, {pkVec, identifierVec}};
+  return {identifierVec, {pkVec, signatureVec}};
 }
 
 std::unique_ptr<PairingManager> create_pairing_manager() {
