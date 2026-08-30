@@ -3,6 +3,7 @@
 #include "airplay_server.hpp"
 #include "crypto.hpp"
 #include "info_plist.hpp"
+#include "pairing-manager.hpp"
 #include "plist.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
@@ -55,22 +56,16 @@ int RTSPParser::parse_message() {
   get_body();
 
   if (strstr(msg_, "GET /info")) {
-    printf("GET /info\n");
     rtsp_get_info();
   } else if (strstr(msg_, "OPTIONS *")) {
-    printf("OPTIONS\n");
     rtsp_get_options();
   } else if (strstr(msg_, "POST /command")) {
-    printf("POST /command\n");
     rtsp_post_commands();
   } else if (strstr(msg_, "POST /fp-setup")) {
-    printf("POST /fp-setup\n");
     rtsp_post_fp_setup();
   } else if (strstr(msg_, "POST /pair-setup")) {
-    printf("POST /pair-setup\n");
     rtsp_post_pair_setup();
   } else if (strstr(msg_, "POST /pair-verify")) {
-    printf("POST /pair-verify\n");
     rtsp_post_pair_verify();
   } else {
     std::cout << msg_ << std::endl;
@@ -335,6 +330,7 @@ int RTSPParser::pair_setup_m4() {
 }
 
 int RTSPParser::pair_setup_m5() {
+  pairingManager_ = create_pairing_manager();
   hapHandler_ = create_hap_handler(srpHandler_->get_session_key());
 
   int err = hapHandler_->hkdf_sha512("Pair-Setup-Encrypt-Salt",
@@ -342,55 +338,33 @@ int RTSPParser::pair_setup_m5() {
 
   err = hapHandler_->set_nonce("PS-Msg05");
 
-  std::vector<uint8_t> blob = hapHandler_->chacha_decrypt(
-      tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
+  hapHandler_->set_cipher_tag(tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
+  std::vector<uint8_t> blob = hapHandler_->chacha_decrypt();
 
   tlv8Decoder_->set_sub_message(blob);
   tlv8Decoder_->decode_sub();
+
+  pairingManager_->add_paired_device(
+      {tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER),
+       {tlv8Decoder_->read_sub_message(TLV8_PK),
+        tlv8Decoder_->read_sub_message(TLV8_SIGNATURE)}});
+
+  err = hapHandler_->hkdf_sha512("Pair-Setup-Controller-Sign-Salt",
+                                 "Pair-Setup-Controller-Sign-Info");
+
+  std::cout << hapHandler_->M5_verification(
+      tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER),
+      tlv8Decoder_->read_sub_message(TLV8_PK),
+      tlv8Decoder_->read_sub_message(TLV8_SIGNATURE));
 
   return err;
 }
 
 int RTSPParser::pair_setup_m6() {
-  hapHandler_ = create_hap_handler(srpHandler_->get_session_key());
+  int err = hapHandler_->hkdf_sha512("Pair-Setup-Accessory-Sign-Salt",
+                                     "Pair-Setup-Accessory-Sign-Info");
 
-  int err = srpHandler_->set_A(tlv8Decoder_->read_message(TLV8_PK));
-  err = srpHandler_->set_M1(tlv8Decoder_->read_message(TLV8_PROOF));
-  if (err < 0) {
-    rtsp_post_pair_error();
-    throw std::runtime_error("Error setting BigNum values");
-  }
-
-  std::cout << "Set M4 values." << std::endl;
-
-  srpHandler_->client_proof();
-  if (!srpHandler_->validate_M1()) {
-    std::cout << "Error: M1 server and M1 client are not the same" << std::endl;
-    rtsp_post_pair_error();
-
-    return -1;
-  }
-
-  err = srpHandler_->create_M2();
-  if (err < 0) {
-    rtsp_post_pair_error();
-    return err;
-  }
-
-  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
-      {TLV8_STATE, {0x04}},
-      // {TLV8_PK, srpHandler_->get_public_key()},
-      {TLV8_PROOF, srpHandler_->get_proof()},
-  };
-
-  err = tlv8Encoder_->set_map(messageMap);
-  err = tlv8Encoder_->encode();
-
-  if (err < 0) {
-    std::cerr << "Error encoding M2 message." << std::endl;
-    rtsp_post_pair_error();
-    return err;
-  }
+  err = hapHandler_->set_nonce("PS-Msg06");
 
   return err;
 }

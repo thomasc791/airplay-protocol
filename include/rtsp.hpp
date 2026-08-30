@@ -3,6 +3,7 @@
 #include "crypto.hpp"
 #include "flags.hpp"
 #include "hap_crypto.hpp"
+#include "pairing-manager.hpp"
 #include "plist.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
@@ -42,6 +43,7 @@ private:
   std::shared_ptr<StatusFlags> statusFlags_;
   std::unique_ptr<TLV8Decoder> tlv8Decoder_;
   std::unique_ptr<TLV8Encoder> tlv8Encoder_;
+  std::unique_ptr<PairingManager> pairingManager_;
 
   int get_content_length();
   int get_cseq();
