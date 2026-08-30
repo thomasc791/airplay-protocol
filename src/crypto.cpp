@@ -5,7 +5,9 @@
 #include <fstream>
 #include <iostream>
 #include <openssl/evp.h>
+#include <openssl/kdf.h>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -103,4 +105,30 @@ std::string CryptoHandler::get_public_hex_string() {
 
 std::shared_ptr<CryptoHandler> create_crypto_handler() {
   return std::make_shared<CryptoHandler>();
+}
+
+std::vector<uint8_t>
+derive_hkdf_key(const std::vector<uint8_t> &input_key_material,
+                const std::string &salt, const std::string &info) {
+  std::vector<uint8_t> out_key(32); // ChaCha20 vereist een 32-byte sleutel
+
+  EVP_KDF *kdf = EVP_KDF_fetch(nullptr, "HKDF", nullptr);
+  EVP_KDF_CTX *kctx = EVP_KDF_CTX_new(kdf);
+
+  OSSL_PARAM params[5];
+  params[0] = OSSL_PARAM_construct_utf8_string("digest", (char *)"SHA512", 0);
+  params[1] = OSSL_PARAM_construct_octet_string(
+      "key", (void *)input_key_material.data(), input_key_material.size());
+  params[2] = OSSL_PARAM_construct_octet_string("salt", (void *)salt.data(),
+                                                salt.size());
+  params[3] = OSSL_PARAM_construct_octet_string("info", (void *)info.data(),
+                                                info.size());
+  params[4] = OSSL_PARAM_construct_end();
+
+  EVP_KDF_derive(kctx, out_key.data(), out_key.size(), params);
+
+  EVP_KDF_CTX_free(kctx);
+  EVP_KDF_free(kdf);
+
+  return out_key;
 }

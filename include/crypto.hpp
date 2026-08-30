@@ -23,3 +23,11 @@ private:
 };
 
 std::shared_ptr<CryptoHandler> create_crypto_handler();
+
+class HAPCrypto {
+public:
+  HAPCrypto();
+  ~HAPCrypto();
+
+private:
+};
