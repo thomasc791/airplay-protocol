@@ -346,7 +346,7 @@ int RTSPParser::pair_setup_m5() {
       tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
 
   tlv8Decoder_->set_sub_message(blob);
-  tlv8Decoder_->decode();
+  tlv8Decoder_->decode_sub();
 
   return err;
 }

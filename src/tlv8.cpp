@@ -22,16 +22,18 @@ void TLV8Decoder::set_sub_message(std::vector<uint8_t> sm) { subMessage_ = sm; }
 void TLV8Decoder::decode() {
   reset();
 
-  while (curr_ < message_.size()) {
+  auto m = message_;
+
+  while (curr_ < m.size()) {
     body_.clear();
 
-    type_ = TLV8Type_t(read());
-    len_ = (size_t)read();
+    type_ = TLV8Type_t(read(m));
+    len_ = (size_t)read(m);
 
     if (len_ == 1) {
-      body_ = {read()};
+      body_ = {read(m)};
     } else {
-      body_ = read((size_t)len_);
+      body_ = read(m, (size_t)len_);
     }
 
     auto [_, success] = messageDictionary_.try_emplace(type_, body_);
@@ -47,16 +49,18 @@ void TLV8Decoder::decode() {
 void TLV8Decoder::decode_sub() {
   curr_ = 0;
 
-  while (curr_ < subMessage_.size()) {
+  auto m = subMessage_;
+
+  while (curr_ < m.size()) {
     body_.clear();
 
-    type_ = TLV8Type_t(read());
-    len_ = (size_t)read();
+    type_ = TLV8Type_t(read(m));
+    len_ = (size_t)read(m);
 
     if (len_ == 1) {
-      body_ = {read()};
+      body_ = {read(m)};
     } else {
-      body_ = read((size_t)len_);
+      body_ = read(m, (size_t)len_);
     }
 
     auto [_, success] = subMessageDictionary_.try_emplace(type_, body_);
@@ -69,27 +73,27 @@ void TLV8Decoder::decode_sub() {
   return;
 }
 
-std::vector<uint8_t> TLV8Decoder::read(size_t length) {
-  if (curr_ + length > message_.size()) {
+std::vector<uint8_t> TLV8Decoder::read(const std::vector<uint8_t> m,
+                                       size_t length) {
+  if (curr_ + length > m.size()) {
     std::cerr << "Message shorter than wanted read length: " << curr_ + length
-              << ", Message length: " << message_.size() << std::endl;
+              << ", Message length: " << m.size() << std::endl;
     return {};
   }
 
-  std::vector<uint8_t> block(message_.begin() + curr_,
-                             message_.begin() + curr_ + length);
+  std::vector<uint8_t> block(m.begin() + curr_, m.begin() + curr_ + length);
 
   curr_ += length;
   return block;
 }
 
-uint8_t TLV8Decoder::read() {
-  if (curr_ >= message_.size()) {
+uint8_t TLV8Decoder::read(const std::vector<uint8_t> m) {
+  if (curr_ >= m.size()) {
     std::cerr << "Reading beyond message not allowed" << std::endl;
     return 0x00;
   }
 
-  uint8_t c = message_[curr_];
+  uint8_t c = m[curr_];
   curr_++;
 
   return c;
@@ -97,6 +101,10 @@ uint8_t TLV8Decoder::read() {
 
 std::vector<uint8_t> TLV8Decoder::read_message(const TLV8Type_t type) {
   return messageDictionary_[type];
+}
+
+std::vector<uint8_t> TLV8Decoder::read_sub_message(const TLV8Type_t type) {
+  return subMessageDictionary_[type];
 }
 
 void TLV8Decoder::reset() {

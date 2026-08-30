@@ -27,6 +27,7 @@ public:
   void decode();
   void decode_sub();
   std::vector<uint8_t> read_message(const TLV8Type_t type);
+  std::vector<uint8_t> read_sub_message(const TLV8Type_t type);
 
 private:
   std::vector<uint8_t> message_;
@@ -41,8 +42,8 @@ private:
   std::map<TLV8Type_t, std::vector<uint8_t>> subMessageDictionary_;
 
   void reset();
-  std::vector<uint8_t> read(size_t to);
-  uint8_t read();
+  std::vector<uint8_t> read(const std::vector<uint8_t> m, size_t length);
+  uint8_t read(const std::vector<uint8_t> m);
 };
 
 class TLV8Encoder {
