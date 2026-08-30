@@ -73,19 +73,16 @@ int RTSPParser::parse_message() {
     printf("POST /pair-verify\n");
     rtsp_post_pair_verify();
   } else {
-    std::cout
-        << "[RTSPParser] ONBEKEND OF VERSLEUTELD BERICHT ONTVANGEN! Lengte: "
-        << messageLength_ << std::endl;
+    std::cout << msg_ << std::endl;
+    std::cout << "[RTSPParser] Unknown or encrypted message received! Lengte: "
+              << messageLength_ << std::endl;
     std::cout << "Ruwe hex data:" << std::endl;
     for (int i = 0; i < messageLength_; i++) {
       printf("%02x ", (unsigned char)msg_[i]);
       // Print maximaal de eerste 64 bytes om je terminal overzichtelijk te
       // houden
-      if (i >= 64) {
-        printf("... \n");
-        break;
-      }
     }
+    printf("\n");
   }
   printf("\n");
 
@@ -212,9 +209,9 @@ int RTSPParser::rtsp_get_info() {
 }
 
 int RTSPParser::rtsp_post_pair_setup() {
-  tlv8Decoder_->reinterpretMessage((const char *)body_, contentLength_);
+  tlv8Decoder_->reinterpret_message((const char *)body_, contentLength_);
   tlv8Decoder_->decode();
-  auto tlv8State = tlv8Decoder_->readMessage(TLV8_STATE);
+  auto tlv8State = tlv8Decoder_->read_message(TLV8_STATE);
 
   std::cout << "Decoding message." << std::endl;
 
@@ -229,7 +226,7 @@ int RTSPParser::rtsp_post_pair_setup() {
   }
 
   std::vector<uint8_t> body;
-  uint8_t currentState = tlv8Decoder_->readMessage(TLV8_STATE)[0];
+  uint8_t currentState = tlv8Decoder_->read_message(TLV8_STATE)[0];
 
   printf("Method: %02x\n", currentState);
 
@@ -244,7 +241,8 @@ int RTSPParser::rtsp_post_pair_setup() {
 
     break;
   case 0x05:
-    err = pair_setup_m2();
+    err = pair_setup_m5();
+    err = pair_setup_m6();
 
     break;
   }
@@ -295,8 +293,69 @@ int RTSPParser::pair_setup_m2() {
 }
 
 int RTSPParser::pair_setup_m4() {
-  int err = srpHandler_->set_A(tlv8Decoder_->readMessage(TLV8_PK));
-  err = srpHandler_->set_M1(tlv8Decoder_->readMessage(TLV8_PROOF));
+  int err = srpHandler_->set_A(tlv8Decoder_->read_message(TLV8_PK));
+  err = srpHandler_->set_M1(tlv8Decoder_->read_message(TLV8_PROOF));
+  if (err < 0) {
+    rtsp_post_pair_error();
+    throw std::runtime_error("Error setting BigNum values");
+  }
+
+  std::cout << "Set M4 values." << std::endl;
+
+  srpHandler_->client_proof();
+  if (!srpHandler_->validate_M1()) {
+    std::cout << "Error: M1 server and M1 client are not the same" << std::endl;
+    rtsp_post_pair_error();
+
+    return -1;
+  }
+
+  err = srpHandler_->create_M2();
+  if (err < 0) {
+    rtsp_post_pair_error();
+    return err;
+  }
+
+  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
+      {TLV8_STATE, {0x04}},
+      // {TLV8_PK, srpHandler_->get_public_key()},
+      {TLV8_PROOF, srpHandler_->get_proof()},
+  };
+
+  err = tlv8Encoder_->set_map(messageMap);
+  err = tlv8Encoder_->encode();
+
+  if (err < 0) {
+    std::cerr << "Error encoding M2 message." << std::endl;
+    rtsp_post_pair_error();
+    return err;
+  }
+
+  return err;
+}
+
+int RTSPParser::pair_setup_m5() {
+  hapHandler_ = create_hap_handler(srpHandler_->get_session_key());
+
+  int err = hapHandler_->hkdf_sha512("Pair-Setup-Encrypt-Salt",
+                                     "Pair-Setup-Encrypt-Info");
+
+  err = hapHandler_->set_nonce("PS-Msg05");
+
+  std::vector<uint8_t> blob = hapHandler_->chacha_decrypt(
+      tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
+
+  tlv8Decoder_->set_sub_message(blob);
+  tlv8Decoder_->decode();
+
+  return err;
+}
+
+int RTSPParser::pair_setup_m6() {
+  hapHandler_ = create_hap_handler(srpHandler_->get_session_key());
+
+  int err = srpHandler_->set_A(tlv8Decoder_->read_message(TLV8_PK));
+  err = srpHandler_->set_M1(tlv8Decoder_->read_message(TLV8_PROOF));
   if (err < 0) {
     rtsp_post_pair_error();
     throw std::runtime_error("Error setting BigNum values");

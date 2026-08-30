@@ -11,11 +11,13 @@
 TLV8Decoder::TLV8Decoder() : curr_(0), messageDictionary_({}) { curr_ = 0; }
 TLV8Decoder::~TLV8Decoder() {}
 
-void TLV8Decoder::reinterpretMessage(const char *body, size_t len) {
+void TLV8Decoder::reinterpret_message(const char *body, size_t len) {
   message_ =
       std::vector<uint8_t>(reinterpret_cast<const uint8_t *>(body),
                            reinterpret_cast<const uint8_t *>(body) + len);
 }
+
+void TLV8Decoder::set_sub_message(std::vector<uint8_t> sm) { subMessage_ = sm; }
 
 void TLV8Decoder::decode() {
   reset();
@@ -36,6 +38,31 @@ void TLV8Decoder::decode() {
     if (!success) {
       messageDictionary_[type_].insert(messageDictionary_[type_].end(),
                                        body_.begin(), body_.end());
+    }
+  }
+
+  return;
+}
+
+void TLV8Decoder::decode_sub() {
+  curr_ = 0;
+
+  while (curr_ < subMessage_.size()) {
+    body_.clear();
+
+    type_ = TLV8Type_t(read());
+    len_ = (size_t)read();
+
+    if (len_ == 1) {
+      body_ = {read()};
+    } else {
+      body_ = read((size_t)len_);
+    }
+
+    auto [_, success] = subMessageDictionary_.try_emplace(type_, body_);
+    if (!success) {
+      subMessageDictionary_[type_].insert(subMessageDictionary_[type_].end(),
+                                          body_.begin(), body_.end());
     }
   }
 
@@ -68,7 +95,7 @@ uint8_t TLV8Decoder::read() {
   return c;
 };
 
-std::vector<uint8_t> TLV8Decoder::readMessage(const TLV8Type_t type) {
+std::vector<uint8_t> TLV8Decoder::read_message(const TLV8Type_t type) {
   return messageDictionary_[type];
 }
 
@@ -76,6 +103,8 @@ void TLV8Decoder::reset() {
   curr_ = 0;
   body_.clear();
   messageDictionary_.clear();
+  subMessage_.clear();
+  subMessageDictionary_.clear();
 }
 
 /* ==================================================

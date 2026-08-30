@@ -2,7 +2,7 @@
 
 FeatureFlags::FeatureFlags(uint64_t mask) : FlagsBase(mask) {
   static constexpr uint64_t defaultFeatureMask =
-      static_cast<uint64_t>(FeatureBits::Ft48TransientPairing) |
+      // static_cast<uint64_t>(FeatureBits::Ft48TransientPairing) |
       static_cast<uint64_t>(FeatureBits::Ft47PeerManagement) |
       static_cast<uint64_t>(FeatureBits::Ft46HomeKitPairing) |
       static_cast<uint64_t>(FeatureBits::Ft41_PTPClock) |
@@ -15,7 +15,7 @@ FeatureFlags::FeatureFlags(uint64_t mask) : FlagsBase(mask) {
       static_cast<uint64_t>(FeatureBits::Ft17AudioMetaTxtDAAP) |
       static_cast<uint64_t>(FeatureBits::Ft16AudioMetaProgress) |
       // static_cast<uint64_t>(FeatureBits::Ft15AudioMetaCovers) |
-      static_cast<uint64_t>(FeatureBits::Ft14MFiSoft_FairPlay) |
+      // static_cast<uint64_t>(FeatureBits::Ft14MFiSoft_FairPlay) |
       static_cast<uint64_t>(FeatureBits::Ft09AirPlayAudio);
 
   defaultFlags_ = defaultFeatureMask;

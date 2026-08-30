@@ -79,14 +79,6 @@ E0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF");
 
 SRPHandler::~SRPHandler() {}
 
-std::vector<uint8_t> SRPHandler::get_salt() {
-  return pad_to(bn_to_bytes(s_.get()), 16);
-}
-
-std::vector<uint8_t> SRPHandler::get_public_key() {
-  return bn_to_bytes(B_.get());
-}
-
 std::vector<uint8_t> SRPHandler::sha512(const std::vector<uint8_t> &data) {
   std::vector<uint8_t> digest(EVP_MD_size(EVP_sha512()));
   unsigned int len = 0;
@@ -252,7 +244,17 @@ int SRPHandler::create_M2() {
   return 0;
 }
 
+std::vector<uint8_t> SRPHandler::get_salt() {
+  return pad_to(bn_to_bytes(s_.get()), 16);
+}
+
+std::vector<uint8_t> SRPHandler::get_public_key() {
+  return bn_to_bytes(B_.get());
+}
+
 std::vector<uint8_t> SRPHandler::get_proof() { return bn_to_bytes(M2_.get()); }
+
+std::vector<uint8_t> SRPHandler::get_session_key() { return rawK_; }
 
 std::unique_ptr<SRPHandler> create_srp_handler() {
   return std::make_unique<SRPHandler>();

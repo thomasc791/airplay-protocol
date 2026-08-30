@@ -22,12 +22,15 @@ public:
   TLV8Decoder();
   ~TLV8Decoder();
 
-  void reinterpretMessage(const char *body, size_t len);
+  void reinterpret_message(const char *body, size_t len);
+  void set_sub_message(std::vector<uint8_t> sm);
   void decode();
-  std::vector<uint8_t> readMessage(const TLV8Type_t type);
+  void decode_sub();
+  std::vector<uint8_t> read_message(const TLV8Type_t type);
 
 private:
   std::vector<uint8_t> message_;
+  std::vector<uint8_t> subMessage_;
   std::vector<uint8_t> decodedMessage_;
   std::vector<uint8_t> body_;
   uint8_t len_;
@@ -35,6 +38,7 @@ private:
   bool longMessage_;
   TLV8Type_t type_;
   std::map<TLV8Type_t, std::vector<uint8_t>> messageDictionary_;
+  std::map<TLV8Type_t, std::vector<uint8_t>> subMessageDictionary_;
 
   void reset();
   std::vector<uint8_t> read(size_t to);

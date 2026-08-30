@@ -28,6 +28,7 @@ public:
   std::vector<uint8_t> get_salt();
   std::vector<uint8_t> get_public_key();
   std::vector<uint8_t> get_proof();
+  std::vector<uint8_t> get_session_key();
 
   int set_A(std::vector<uint8_t> A);
   int set_M1(std::vector<uint8_t> M1);

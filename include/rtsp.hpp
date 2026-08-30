@@ -2,6 +2,7 @@
 
 #include "crypto.hpp"
 #include "flags.hpp"
+#include "hap_crypto.hpp"
 #include "plist.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
@@ -34,6 +35,7 @@ private:
   PlistWriter plistWriter_;
   char header[256];
 
+  std::unique_ptr<HAPCrypto> hapHandler_;
   std::unique_ptr<SRPHandler> srpHandler_;
   std::shared_ptr<CryptoHandler> cryptoHandler_;
   std::shared_ptr<FeatureFlags> featureFlags_;
@@ -55,6 +57,8 @@ private:
   int rtsp_post_pair_setup();
   int pair_setup_m2();
   int pair_setup_m4();
+  int pair_setup_m5();
+  int pair_setup_m6();
 
   std::vector<uint8_t> create_plist();
 };
