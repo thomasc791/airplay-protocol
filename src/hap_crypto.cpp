@@ -78,9 +78,7 @@ int HAPCrypto::M5_verification(std::vector<uint8_t> identifier,
                                std::vector<uint8_t> signature) {
 
   std::vector<uint8_t> messageInfo;
-  messageInfo.reserve(
-      key_.size() + identifier.size() +
-      ltpk.size()); // Optioneel, voorkomt extra geheugenallocaties
+  messageInfo.reserve(key_.size() + identifier.size() + ltpk.size());
 
   messageInfo.insert(messageInfo.end(), key_.begin(), key_.end());
   messageInfo.insert(messageInfo.end(), identifier.begin(), identifier.end());
@@ -93,17 +91,14 @@ int HAPCrypto::M5_verification(std::vector<uint8_t> identifier,
   EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, nullptr,
                                                ltpk.data(), ltpk.size());
 
-  // 2. Maak een verificatie-context aan
   EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
-
-  // 3. Initialiseer en verifieer in één keer (Ed25519 ondersteunt geen
-  // streaming update)
   EVP_DigestVerifyInit(mdctx, nullptr, nullptr, nullptr, pkey);
 
-  // messageInfo is de samengevoegde buffer uit stap 2
-  // signature is de 64-byte vector uit TLV 0x0A
   int result = EVP_DigestVerify(mdctx, signature.data(), signature.size(),
                                 messageInfo.data(), messageInfo.size());
+
+  EVP_PKEY_free(pkey);
+  EVP_MD_CTX_free(mdctx);
 
   return result;
 }

@@ -2,5 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
-std::string chars_to_string(const uint8_t *c, size_t len);
+std::vector<uint8_t> hex_to_chars(const std::string &hexStr);
+std::string chars_to_hex(const std::vector<uint8_t> &data);

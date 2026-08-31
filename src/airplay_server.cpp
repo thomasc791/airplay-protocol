@@ -1,6 +1,7 @@
 #include "airplay_server.hpp"
 #include "crypto.hpp"
 #include "flags.hpp"
+#include "rtsp.hpp"
 #include "utils.hpp"
 
 #include <avahi-client/client.h>
@@ -158,8 +159,8 @@ void AirPlayServer::handle_client(int client_fd) {
   std::cout << "Created new RTSP handler for client with ID: " << client_fd
             << std::endl
             << "Starting new RTSP parser..." << std::endl;
-  rtspParser_ = create_rtsp_parser(client_fd, cryptoHandler_, featureFlags_,
-                                   statusFlags_);
+  auto rtspParser = create_rtsp_parser(client_fd, cryptoHandler_, featureFlags_,
+                                       statusFlags_);
   char buffer[2048] = {0};
   while (running_) {
     memset(buffer, 0, sizeof(buffer));
@@ -170,8 +171,8 @@ void AirPlayServer::handle_client(int client_fd) {
       break;
     }
 
-    rtspParser_->set_msg(buffer, bytes_read);
-    rtspParser_->parse_message();
+    rtspParser->set_msg(buffer, bytes_read);
+    rtspParser->parse_message();
   }
   close(client_fd);
 }

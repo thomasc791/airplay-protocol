@@ -25,4 +25,4 @@ private:
 
 std::unique_ptr<PairingManager> create_pairing_manager();
 std::string to_hex(const std::vector<uint8_t> &data);
-std::vector<uint8_t> from_hex(const std::string &hexStr);
+std::vector<uint8_t> hex_to_chars(const std::string &hexStr);

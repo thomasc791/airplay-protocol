@@ -2,13 +2,25 @@
 
 #include <iomanip>
 #include <sstream>
+#include <vector>
 
-std::string chars_to_string(const uint8_t *c, size_t len) {
-  std::ostringstream oss;
-  for (size_t i = 0; i < len; ++i) {
-    // Convert each byte to a 2-character hex format
-    oss << std::hex << std::setw(2) << std::setfill('0')
-        << static_cast<int>(c[i]);
+std::vector<uint8_t> hex_to_chars(const std::string &hexStr) {
+  std::vector<uint8_t> bytes;
+
+  for (size_t i = 0; i < hexStr.length(); i += 2) {
+    std::string byteString = hexStr.substr(i, 2);
+    uint8_t byte = static_cast<uint8_t>(std::stoi(byteString, nullptr, 16));
+    bytes.push_back(byte);
   }
-  return oss.str();
+
+  return bytes;
+}
+
+std::string chars_to_hex(const std::vector<uint8_t> &data) {
+  std::stringstream ss;
+  ss << std::hex << std::setfill('0');
+  for (uint8_t byte : data) {
+    ss << std::setw(2) << static_cast<int>(byte);
+  }
+  return ss.str();
 }

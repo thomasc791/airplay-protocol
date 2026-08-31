@@ -1,7 +1,7 @@
 #include "pairing-manager.hpp"
+#include "utils.hpp"
 
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -51,9 +51,9 @@ PairingManager::~PairingManager() {
     for (auto [k, v] : pairingMap_) {
       if (k.size() <= 0)
         break;
-      fout << to_hex(k);
+      fout << chars_to_hex(k);
       for (auto vv : v)
-        fout << "," << to_hex(vv);
+        fout << "," << chars_to_hex(vv);
       fout << std::endl;
     }
 
@@ -89,34 +89,13 @@ PairingManager::read_pair(std::stringstream &pair) {
     i++;
   }
 
-  std::vector<uint8_t> identifierVec = from_hex(identifier);
-  std::vector<uint8_t> pkVec = from_hex(publicKey);
-  std::vector<uint8_t> signatureVec = from_hex(signature);
+  std::vector<uint8_t> identifierVec = hex_to_chars(identifier);
+  std::vector<uint8_t> pkVec = hex_to_chars(publicKey);
+  std::vector<uint8_t> signatureVec = hex_to_chars(signature);
 
   return {identifierVec, {pkVec, signatureVec}};
 }
 
 std::unique_ptr<PairingManager> create_pairing_manager() {
   return std::make_unique<PairingManager>();
-}
-
-std::string to_hex(const std::vector<uint8_t> &data) {
-  std::stringstream ss;
-  ss << std::hex << std::setfill('0');
-  for (uint8_t byte : data) {
-    ss << std::setw(2) << static_cast<int>(byte);
-  }
-  return ss.str();
-}
-
-std::vector<uint8_t> from_hex(const std::string &hexStr) {
-  std::vector<uint8_t> bytes;
-
-  for (size_t i = 0; i < hexStr.length(); i += 2) {
-    std::string byteString = hexStr.substr(i, 2);
-    uint8_t byte = static_cast<uint8_t>(std::stoi(byteString, nullptr, 16));
-    bytes.push_back(byte);
-  }
-
-  return bytes;
 }

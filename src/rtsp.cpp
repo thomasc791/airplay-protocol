@@ -29,6 +29,7 @@ RTSPParser::RTSPParser(int client_fd,
   tlv8Decoder_ = create_tlv8_decoder();
   tlv8Encoder_ = create_tlv8_encoder();
   srpHandler_ = create_srp_handler();
+  pairingManager_ = create_pairing_manager();
 }
 
 RTSPParser::~RTSPParser() {}
@@ -330,7 +331,6 @@ int RTSPParser::pair_setup_m4() {
 }
 
 int RTSPParser::pair_setup_m5() {
-  pairingManager_ = create_pairing_manager();
   hapHandler_ = create_hap_handler(srpHandler_->get_session_key());
 
   int err = hapHandler_->hkdf_sha512("Pair-Setup-Encrypt-Salt",
@@ -352,7 +352,7 @@ int RTSPParser::pair_setup_m5() {
       tlv8Decoder_->read_sub_message(TLV8_PK),
       tlv8Decoder_->read_sub_message(TLV8_SIGNATURE));
 
-  if (!ok) {
+  if (ok != 1) {
     std::cerr << "M5 Verification not OK. Quitting." << std::endl;
     rtsp_post_pair_error();
 
@@ -469,6 +469,8 @@ int RTSPParser::get_body() {
     body_ = bodyBuffer_;
 
     remaining -= receivedSize;
+
+    free(bodyBuffer_);
   } else if (remaining > 0) {
     int receivedSize =
         recv(client_fd_, body_ + bodyRead, remaining, MSG_WAITALL);

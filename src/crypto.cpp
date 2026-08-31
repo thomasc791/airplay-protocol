@@ -6,43 +6,47 @@
 #include <iostream>
 #include <openssl/evp.h>
 #include <openssl/kdf.h>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace fs = std::filesystem;
 
-CryptoHandler::CryptoHandler() : pkey(nullptr) { store_retrieve_pkey(); }
-CryptoHandler::~CryptoHandler() {}
+CryptoHandler::CryptoHandler() : priv_(32), pub_(32), pkey_(nullptr) {
+  ctx_ = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, nullptr);
+
+  store_retrieve_pkey();
+}
+CryptoHandler::~CryptoHandler() {
+  EVP_PKEY_free(pkey_);
+  EVP_PKEY_CTX_free(ctx_);
+}
 
 EVP_PKEY *CryptoHandler::generate_identity_keypair() {
-  EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, nullptr);
-  EVP_PKEY *pkey = nullptr;
+  pkey_ = nullptr;
 
-  if (!EVP_PKEY_keygen_init(ctx)) {
-    std::cerr << "EVP_PKEY key generation initialisation failed." << std::endl;
-
-    EVP_PKEY_CTX_free(ctx);
-    return pkey;
+  if (!EVP_PKEY_keygen_init(ctx_)) {
+    throw std::runtime_error("EVP_PKEY key generation initialisation failed.");
   }
 
-  if (!EVP_PKEY_keygen(ctx, &pkey)) {
-    std::cerr << "EVP_PKEY key generation failed." << std::endl;
-
-    EVP_PKEY_CTX_free(ctx);
-    return pkey;
+  if (!EVP_PKEY_keygen(ctx_, &pkey_)) {
+    throw std::runtime_error("EVP_PKEY key generation failed.");
   }
 
-  EVP_PKEY_CTX_free(ctx);
-
-  return pkey;
+  return pkey_;
 }
 
 int CryptoHandler::get_raw_keypair(EVP_PKEY *pkey) {
   size_t priv_len = 32;
   size_t pub_len = 32;
 
-  EVP_PKEY_get_raw_private_key(pkey, priv_, &priv_len);
-  EVP_PKEY_get_raw_public_key(pkey, pub_, &pub_len);
+  if (priv_.size() != 32) {
+    std::cerr << "EVP_PKEY key generation initialisation failed." << std::endl;
+    return -1;
+  }
+
+  EVP_PKEY_get_raw_private_key(pkey, priv_.data(), &priv_len);
+  EVP_PKEY_get_raw_public_key(pkey, pub_.data(), &pub_len);
 
   return 0;
 }
@@ -54,6 +58,11 @@ int CryptoHandler::store_retrieve_pkey() {
   fs::path keyDir = baseDir / "airplay-protocol";
   fs::path filePath = keyDir / "identity";
 
+  fs::path pubPath = filePath;
+  fs::path privPath = filePath;
+  pubPath += ".pub";
+  privPath += ".priv";
+
   if (!fs::exists(keyDir)) {
     if (!fs::create_directory(keyDir)) {
       std::cerr << "Failed to create directory at " << keyDir << std::endl;
@@ -62,35 +71,41 @@ int CryptoHandler::store_retrieve_pkey() {
     }
   }
 
-  if (!fs::exists(filePath)) {
+  if (!fs::exists(pubPath)) {
+    generate_identity_keypair();
+    get_raw_keypair(pkey_);
 
-    pkey = generate_identity_keypair();
-    get_raw_keypair(pkey);
+    pub_key_hex_ = chars_to_hex(pub_);
+    priv_key_hex_ = chars_to_hex(priv_);
 
-    pub_key_hex_ = chars_to_string(pub_, 32);
-    priv_key_hex_ = chars_to_string(priv_, 32);
-
-    std::ofstream publicKeyFile(filePath / ".pub");
+    std::ofstream publicKeyFile(pubPath);
     if (publicKeyFile.is_open()) {
       publicKeyFile << pub_key_hex_;
+    } else {
+      std::cerr << "Error writing public key" << std::endl;
     }
 
-    std::ofstream privateKeyFile(filePath / ".priv");
+    std::ofstream privateKeyFile(privPath);
     if (privateKeyFile.is_open()) {
       privateKeyFile << priv_key_hex_;
+    } else {
+      std::cerr << "Error writing private key" << std::endl;
     }
-
-    EVP_PKEY_free(pkey);
-    pkey = nullptr;
 
     publicKeyFile.close();
 
     return 0;
   } else {
-    std::ifstream publicKeyFile(filePath / ".pub");
-    std::ifstream privateKeyFile(filePath / ".priv");
+    std::ifstream publicKeyFile(pubPath);
+    std::ifstream privateKeyFile(privPath);
     std::getline(publicKeyFile, pub_key_hex_);
     std::getline(privateKeyFile, priv_key_hex_);
+
+    priv_ = hex_to_chars(priv_key_hex_);
+    pub_ = hex_to_chars(pub_key_hex_);
+
+    pkey_ = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, nullptr,
+                                         priv_.data(), priv_.size());
 
     publicKeyFile.close();
     privateKeyFile.close();
@@ -102,6 +117,8 @@ int CryptoHandler::store_retrieve_pkey() {
 std::string CryptoHandler::get_public_hex_string() {
   return this->pub_key_hex_;
 }
+
+std::vector<uint8_t> CryptoHandler::get_public_key() { return pub_; }
 
 std::shared_ptr<CryptoHandler> create_crypto_handler() {
   return std::make_shared<CryptoHandler>();

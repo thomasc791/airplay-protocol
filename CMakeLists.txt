@@ -3,6 +3,7 @@ project(airplay_receiver CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_BUILD_TYPE Debug)
 
 add_compile_options(-Wall -Wextra -O2)
 

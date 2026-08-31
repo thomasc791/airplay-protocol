@@ -18,7 +18,6 @@ private:
   std::atomic<bool> running_{false};
   std::thread server_thread_;
   std::unique_ptr<IMDnsService> mdns_;
-  std::unique_ptr<RTSPParser> rtspParser_;
   std::shared_ptr<CryptoHandler> cryptoHandler_;
   std::shared_ptr<FeatureFlags> featureFlags_;
   std::shared_ptr<StatusFlags> statusFlags_;
