@@ -8,7 +8,7 @@
  * ================= TLV8 Decoder ===================
  * ================================================== */
 
-TLV8Decoder::TLV8Decoder() : curr_(0), messageDictionary_({}) { curr_ = 0; }
+TLV8Decoder::TLV8Decoder() : curr_(0), messageMap_({}) { curr_ = 0; }
 TLV8Decoder::~TLV8Decoder() {}
 
 void TLV8Decoder::reinterpret_message(const char *body, size_t len) {
@@ -36,10 +36,10 @@ void TLV8Decoder::decode() {
       body_ = read(m, (size_t)len_);
     }
 
-    auto [_, success] = messageDictionary_.try_emplace(type_, body_);
+    auto [_, success] = messageMap_.try_emplace(type_, body_);
     if (!success) {
-      messageDictionary_[type_].insert(messageDictionary_[type_].end(),
-                                       body_.begin(), body_.end());
+      messageMap_[type_].insert(messageMap_[type_].end(), body_.begin(),
+                                body_.end());
     }
   }
 
@@ -63,14 +63,14 @@ void TLV8Decoder::decode_sub() {
       body_ = read(m, (size_t)len_);
     }
 
-    auto [_, success] = subMessageDictionary_.try_emplace(type_, body_);
+    auto [_, success] = subMessageMap_.try_emplace(type_, body_);
     if (!success) {
-      subMessageDictionary_[type_].insert(subMessageDictionary_[type_].end(),
-                                          body_.begin(), body_.end());
+      subMessageMap_[type_].insert(subMessageMap_[type_].end(), body_.begin(),
+                                   body_.end());
     }
   }
 
-  for (auto [k, v] : subMessageDictionary_) {
+  for (auto [k, v] : subMessageMap_) {
     printf("Key: %02x\n", k);
     printf("Value: ");
     for (auto vv : v)
@@ -108,19 +108,19 @@ uint8_t TLV8Decoder::read(const std::vector<uint8_t> m) {
 };
 
 std::vector<uint8_t> TLV8Decoder::read_message(const TLV8Type_t type) {
-  return messageDictionary_[type];
+  return messageMap_[type];
 }
 
 std::vector<uint8_t> TLV8Decoder::read_sub_message(const TLV8Type_t type) {
-  return subMessageDictionary_[type];
+  return subMessageMap_[type];
 }
 
 void TLV8Decoder::reset() {
   curr_ = 0;
   body_.clear();
-  messageDictionary_.clear();
+  messageMap_.clear();
   subMessage_.clear();
-  subMessageDictionary_.clear();
+  subMessageMap_.clear();
 }
 
 /* ==================================================
@@ -202,8 +202,8 @@ int TLV8Encoder::input_short_message(uint8_t type,
     return -1;
   }
 
-  body_.insert(body_.end(), type);
-  body_.insert(body_.end(), message.size());
+  body_.push_back(type);
+  body_.push_back(message.size());
   body_.insert(body_.end(), message.begin(), message.end());
 
   return 0;

@@ -4,7 +4,6 @@
 #include "flags.hpp"
 #include "hal/mdns_service.hpp"
 
-#include "rtsp.hpp"
 #include <atomic>
 #include <memory>
 #include <string>
@@ -14,7 +13,7 @@ class AirPlayServer {
 private:
   uint16_t port_;
   std::string deviceName_;
-  std::string device_id_;
+  std::string deviceID_;
   std::atomic<bool> running_{false};
   std::thread server_thread_;
   std::unique_ptr<IMDnsService> mdns_;

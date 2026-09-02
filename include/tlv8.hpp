@@ -38,8 +38,8 @@ private:
   size_t curr_;
   bool longMessage_;
   TLV8Type_t type_;
-  std::map<TLV8Type_t, std::vector<uint8_t>> messageDictionary_;
-  std::map<TLV8Type_t, std::vector<uint8_t>> subMessageDictionary_;
+  std::map<TLV8Type_t, std::vector<uint8_t>> messageMap_;
+  std::map<TLV8Type_t, std::vector<uint8_t>> subMessageMap_;
 
   void reset();
   std::vector<uint8_t> read(const std::vector<uint8_t> m, size_t length);
@@ -53,10 +53,12 @@ public:
 
   int set_map(std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> map);
   int encode();
+
   std::vector<uint8_t> get_body();
 
 private:
   std::vector<uint8_t> body_;
+  std::vector<uint8_t> subBody_;
   size_t curr_;
   std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap_;
 

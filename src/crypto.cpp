@@ -1,4 +1,5 @@
 #include "crypto.hpp"
+#include "airplay_server.hpp"
 #include "utils.hpp"
 
 #include <filesystem>
@@ -14,6 +15,7 @@ namespace fs = std::filesystem;
 
 CryptoHandler::CryptoHandler() : priv_(32), pub_(32), pkey_(nullptr) {
   ctx_ = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, nullptr);
+  identifier_ = hex_to_chars(remove_colon(get_system_mac_address()));
 
   store_retrieve_pkey();
 }
@@ -114,38 +116,46 @@ int CryptoHandler::store_retrieve_pkey() {
   return 0;
 }
 
-std::string CryptoHandler::get_public_hex_string() {
-  return this->pub_key_hex_;
+int CryptoHandler::set_accessory_x(std::vector<uint8_t> a) {
+  if (a.size() != 32) {
+    std::cerr << "Error setting accessory" << std::endl;
+    return -1;
+  }
+  accessoryX_ = a;
+
+  return 1;
 }
 
+int CryptoHandler::set_signature() {
+  std::vector<uint8_t> messageInfo;
+  messageInfo.insert(messageInfo.end(), identifier_.begin(), identifier_.end());
+  messageInfo.insert(messageInfo.end(), accessoryX_.begin(), accessoryX_.end());
+  messageInfo.insert(messageInfo.end(), pub_.begin(), pub_.end());
+
+  EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+  if (EVP_DigestSignInit(mdctx, nullptr, nullptr, nullptr, pkey_) != 1) {
+    std::cerr << "Error initialising signing" << std::endl;
+    return -1;
+  }
+
+  size_t sigLen = 64;
+  signature_ = std::vector<uint8_t>(sigLen);
+
+  if (EVP_DigestSign(mdctx, signature_.data(), &sigLen, messageInfo.data(),
+                     messageInfo.size()) != 1) {
+    std::cerr << "Error signing signature" << std::endl;
+    return -1;
+  }
+
+  EVP_MD_CTX_free(mdctx);
+
+  return 1;
+}
+
+std::string CryptoHandler::get_public_hex_string() { return pub_key_hex_; }
 std::vector<uint8_t> CryptoHandler::get_public_key() { return pub_; }
+std::vector<uint8_t> CryptoHandler::get_signature() { return signature_; }
 
 std::shared_ptr<CryptoHandler> create_crypto_handler() {
   return std::make_shared<CryptoHandler>();
-}
-
-std::vector<uint8_t>
-derive_hkdf_key(const std::vector<uint8_t> &input_key_material,
-                const std::string &salt, const std::string &info) {
-  std::vector<uint8_t> out_key(32); // ChaCha20 vereist een 32-byte sleutel
-
-  EVP_KDF *kdf = EVP_KDF_fetch(nullptr, "HKDF", nullptr);
-  EVP_KDF_CTX *kctx = EVP_KDF_CTX_new(kdf);
-
-  OSSL_PARAM params[5];
-  params[0] = OSSL_PARAM_construct_utf8_string("digest", (char *)"SHA512", 0);
-  params[1] = OSSL_PARAM_construct_octet_string(
-      "key", (void *)input_key_material.data(), input_key_material.size());
-  params[2] = OSSL_PARAM_construct_octet_string("salt", (void *)salt.data(),
-                                                salt.size());
-  params[3] = OSSL_PARAM_construct_octet_string("info", (void *)info.data(),
-                                                info.size());
-  params[4] = OSSL_PARAM_construct_end();
-
-  EVP_KDF_derive(kctx, out_key.data(), out_key.size(), params);
-
-  EVP_KDF_CTX_free(kctx);
-  EVP_KDF_free(kdf);
-
-  return out_key;
 }

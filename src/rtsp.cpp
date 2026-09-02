@@ -1,12 +1,12 @@
 #include "rtsp.hpp"
 
-#include "airplay_server.hpp"
 #include "crypto.hpp"
 #include "info_plist.hpp"
 #include "pairing-manager.hpp"
 #include "plist.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
+#include "utils.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -17,12 +17,13 @@
 #include <sys/socket.h>
 #include <vector>
 
-RTSPParser::RTSPParser(int client_fd,
+RTSPParser::RTSPParser(int client_fd, std::string macAddress,
                        std::shared_ptr<CryptoHandler> cryptoHandler,
                        std::shared_ptr<FeatureFlags> featureFlags,
                        std::shared_ptr<StatusFlags> statusFlags)
-    : client_fd_(client_fd), contentLength_(), CSeq_(), msg_{}, plistWriter_(),
-      header{}, cryptoHandler_(cryptoHandler), featureFlags_(featureFlags),
+    : clientID_(client_fd), contentLength_(), CSeq_(), msg_{},
+      macAddress_(macAddress), plistWriter_(), header{},
+      cryptoHandler_(cryptoHandler), featureFlags_(featureFlags),
       statusFlags_(statusFlags) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
@@ -35,7 +36,7 @@ RTSPParser::RTSPParser(int client_fd,
 RTSPParser::~RTSPParser() {}
 
 int RTSPParser::set_client(int currentClient) {
-  client_fd_ = currentClient;
+  clientID_ = currentClient;
   return 0;
 }
 
@@ -99,7 +100,7 @@ std::vector<uint8_t> RTSPParser::create_plist() {
   using V = PlistWriter::Value;
 
   auto plist = plistWriter_.serialize(V::dict({
-      {"deviceID", V::string(get_system_mac_address())},
+      {"deviceID", V::string(macAddress_)},
       {"features", V::uint(featureFlags_->getRaw())},
       {"model", V::string("AudioAccessory6,1")},
       {"gcgl", V::string("0")},
@@ -129,7 +130,7 @@ int RTSPParser::rtsp_get_options() {
                             "\r\n",
                             CSeq_);
 
-  send(client_fd_, header, header_len, 0);
+  send(clientID_, header, header_len, 0);
 
   std::cout << "Send rtsp get options" << std::endl;
   return 0;
@@ -146,7 +147,7 @@ int RTSPParser::rtsp_post_commands() {
                             "\r\n",
                             CSeq_);
 
-  send(client_fd_, header, header_len, 0);
+  send(clientID_, header, header_len, 0);
   // int header_len = snprintf(header, sizeof(header),
   //                           "RTSP/1.0 200 OK\r\n"
   //                           "CSeq: %d\r\n"
@@ -180,7 +181,7 @@ int RTSPParser::rtsp_post_fp_setup() {
                             "\r\n",
                             CSeq_);
 
-  send(client_fd_, header, header_len, 0);
+  send(clientID_, header, header_len, 0);
   return 0;
 }
 
@@ -196,9 +197,9 @@ int RTSPParser::rtsp_get_info() {
                             "\r\n",
                             CSeq_, (int)plist.size());
 
-  if (send(client_fd_, header, header_len, 0) < 0)
+  if (send(clientID_, header, header_len, 0) < 0)
     std::cerr << "[RTSPParser] Header not sent correctly!" << std::endl;
-  if (send(client_fd_, plist.data(), plist.size(), 0) < 0)
+  if (send(clientID_, plist.data(), plist.size(), 0) < 0)
     std::cerr << "[RTSPParser] Header not sent correctly!" << std::endl;
 
   return 0;
@@ -250,6 +251,7 @@ int RTSPParser::rtsp_post_pair_setup() {
   }
 
   body = tlv8Encoder_->get_body();
+  std::cout << chars_to_hex(body) << std::endl;
 
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
@@ -262,8 +264,8 @@ int RTSPParser::rtsp_post_pair_setup() {
 
   std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
 
-  err = send(client_fd_, header, header_len, 0);
-  err = send(client_fd_, body.data(), body.size(), 0);
+  err = send(clientID_, header, header_len, 0);
+  err = send(clientID_, body.data(), body.size(), 0);
 
   if (err < 0) {
     std::cerr << "Could not send message." << std::endl;
@@ -370,8 +372,32 @@ int RTSPParser::pair_setup_m5() {
 int RTSPParser::pair_setup_m6() {
   int err = hapHandler_->hkdf_sha512("Pair-Setup-Accessory-Sign-Salt",
                                      "Pair-Setup-Accessory-Sign-Info");
+  err = cryptoHandler_->set_accessory_x(hapHandler_->get_key());
+  err = cryptoHandler_->set_signature();
+
+  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> subMessageMap = {
+      {TLV8_IDENTIFIER, hex_to_chars(remove_colon(macAddress_))},
+      {TLV8_PK, cryptoHandler_->get_public_key()},
+      {TLV8_SIGNATURE, cryptoHandler_->get_signature()},
+  };
+
+  tlv8Encoder_->set_map(subMessageMap);
+  tlv8Encoder_->encode();
 
   err = hapHandler_->set_nonce("PS-Msg06");
+  err = hapHandler_->hkdf_sha512("Pair-Setup-Encrypt-Salt",
+                                 "Pair-Setup-Encrypt-Info");
+
+  auto subEncryptedSubmessage =
+      hapHandler_->chacha_encrypt(tlv8Encoder_->get_body());
+
+  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
+      {TLV8_STATE, {0x06}},
+      {TLV8_ENCRYPTED_DATA, subEncryptedSubmessage},
+  };
+
+  tlv8Encoder_->set_map(messageMap);
+  tlv8Encoder_->encode();
 
   return err;
 }
@@ -389,8 +415,8 @@ int RTSPParser::rtsp_post_pair_verify() {
                             "\r\n",
                             CSeq_, (int)sizeof(tlv));
 
-  send(client_fd_, header, header_len, 0);
-  send(client_fd_, tlv, sizeof(tlv), 0);
+  send(clientID_, header, header_len, 0);
+  send(clientID_, tlv, sizeof(tlv), 0);
 
   return 0;
 };
@@ -407,8 +433,8 @@ int RTSPParser::rtsp_post_pair_error() {
                             "\r\n",
                             CSeq_, (int)sizeof(tlv));
 
-  send(client_fd_, header, header_len, 0);
-  send(client_fd_, tlv, sizeof(tlv), 0);
+  send(clientID_, header, header_len, 0);
+  send(clientID_, tlv, sizeof(tlv), 0);
 
   return 0;
 }
@@ -464,7 +490,7 @@ int RTSPParser::get_body() {
 
     memcpy(bodyBuffer_, body_, bodyRead);
     int receivedSize =
-        recv(client_fd_, bodyBuffer_ + bodyRead, remaining, MSG_WAITALL);
+        recv(clientID_, bodyBuffer_ + bodyRead, remaining, MSG_WAITALL);
     bodyBuffer_[contentLength_] = '\0';
     body_ = bodyBuffer_;
 
@@ -473,7 +499,7 @@ int RTSPParser::get_body() {
     free(bodyBuffer_);
   } else if (remaining > 0) {
     int receivedSize =
-        recv(client_fd_, body_ + bodyRead, remaining, MSG_WAITALL);
+        recv(clientID_, body_ + bodyRead, remaining, MSG_WAITALL);
     remaining -= receivedSize;
     bodyRead += receivedSize;
   }
@@ -485,9 +511,10 @@ int RTSPParser::get_body() {
 }
 
 std::unique_ptr<RTSPParser>
-create_rtsp_parser(int client_fd, std::shared_ptr<CryptoHandler> cryptoHandler,
+create_rtsp_parser(int clientID, std::string macAddress,
+                   std::shared_ptr<CryptoHandler> cryptoHandler,
                    std::shared_ptr<FeatureFlags> featureFlags,
                    std::shared_ptr<StatusFlags> statusFlags) {
-  return std::make_unique<RTSPParser>(client_fd, cryptoHandler, featureFlags,
-                                      statusFlags);
+  return std::make_unique<RTSPParser>(clientID, macAddress, cryptoHandler,
+                                      featureFlags, statusFlags);
 }

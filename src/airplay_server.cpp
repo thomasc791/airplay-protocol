@@ -18,7 +18,7 @@
 AirPlayServer::AirPlayServer(const std::string &device_name, uint16_t port)
     : port_(port), deviceName_(device_name) {
 
-  device_id_ = get_system_mac_address();
+  deviceID_ = get_system_mac_address();
 }
 
 AirPlayServer::~AirPlayServer() { stop(); }
@@ -49,7 +49,7 @@ bool AirPlayServer::start() {
 int AirPlayServer::publish_airplay_service() {
   std::map<std::string, std::string> txt = {
       {"acl", "0"},
-      {"deviceid", device_id_},
+      {"deviceid", deviceID_},
       {"features", featureFlags_->getHex()},
       {"flags", statusFlags_->getHex()},
       {"gid", "767e31b2-9074-4be0-a3ad-4c0b491877ca"},
@@ -59,7 +59,7 @@ int AirPlayServer::publish_airplay_service() {
       // {"igl", "0"},
       {"protovers", "1.1"},
       {"rsf", "0x0"},
-      {"serialNumber", device_id_},
+      {"serialNumber", deviceID_},
       {"srcvers", "366.0"},
   };
   mdns_->publish_service(deviceName_, "_airplay._tcp", 7000, txt);
@@ -155,31 +155,31 @@ void AirPlayServer::run() {
   close(server_fd);
 }
 
-void AirPlayServer::handle_client(int client_fd) {
-  std::cout << "Created new RTSP handler for client with ID: " << client_fd
+void AirPlayServer::handle_client(int clientID) {
+  std::cout << "Created new RTSP handler for client with ID: " << clientID
             << std::endl
             << "Starting new RTSP parser..." << std::endl;
-  auto rtspParser = create_rtsp_parser(client_fd, cryptoHandler_, featureFlags_,
-                                       statusFlags_);
+  auto rtspParser = create_rtsp_parser(clientID, deviceID_, cryptoHandler_,
+                                       featureFlags_, statusFlags_);
   char buffer[2048] = {0};
   while (running_) {
     memset(buffer, 0, sizeof(buffer));
-    ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
+    ssize_t bytes_read = read(clientID, buffer, sizeof(buffer) - 1);
 
     if (bytes_read <= 0) {
-      std::cout << "Client " << client_fd << " disconnected." << std::endl;
+      std::cout << "Client " << clientID << " disconnected." << std::endl;
       break;
     }
 
     rtspParser->set_msg(buffer, bytes_read);
     rtspParser->parse_message();
   }
-  close(client_fd);
+  close(clientID);
 }
 
 std::string get_system_mac_address() {
   struct ifaddrs *ifaddr = nullptr;
-  if (getifaddrs(&ifaddr) != -1) {
+  if (getifaddrs(&ifaddr) == -1) {
     return "00:11:22:33:44:08"; // Fallback MAC if call fails
   }
 

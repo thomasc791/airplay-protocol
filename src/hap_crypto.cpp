@@ -1,7 +1,6 @@
 #include "hap_crypto.hpp"
 
 #include <iostream>
-#include <openssl/evp.h>
 #include <openssl/kdf.h>
 #include <stdexcept>
 #include <vector>
@@ -9,27 +8,38 @@
 HAPCrypto::HAPCrypto(std::vector<uint8_t> sk)
     : sk_(sk), cipherText_({}), authTag_({}) {
   key_ = std::vector<uint8_t>(32);
+
+  cipherCtx_ = EVP_CIPHER_CTX_new();
 }
+
+HAPCrypto::~HAPCrypto() { EVP_CIPHER_CTX_free(cipherCtx_); }
 
 int HAPCrypto::hkdf_sha512(const std::string &salt, const std::string &info) {
   key_.clear();
   key_.resize(32);
 
-  std::cout << "Key length: " << key_.size() << std::endl;
+  EVP_KDF *kdf = EVP_KDF_fetch(nullptr, "HKDF", nullptr);
+  EVP_KDF_CTX *kctx = EVP_KDF_CTX_new(kdf);
 
-  size_t outlen = key_.size();
+  OSSL_PARAM params[5];
+  params[0] = OSSL_PARAM_construct_utf8_string("digest", (char *)"SHA512", 0);
+  params[1] =
+      OSSL_PARAM_construct_octet_string("key", (void *)sk_.data(), sk_.size());
+  params[2] = OSSL_PARAM_construct_octet_string("salt", (void *)salt.data(),
+                                                salt.size());
+  params[3] = OSSL_PARAM_construct_octet_string("info", (void *)info.data(),
+                                                info.size());
+  params[4] = OSSL_PARAM_construct_end();
 
-  EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr);
-  EVP_PKEY_derive_init(pctx);
-  EVP_PKEY_CTX_set_hkdf_md(pctx, EVP_sha512());
-  EVP_PKEY_CTX_set1_hkdf_salt(pctx, (const uint8_t *)salt.data(), salt.size());
-  EVP_PKEY_CTX_set1_hkdf_key(pctx, sk_.data(), sk_.size());
-  EVP_PKEY_CTX_add1_hkdf_info(pctx, (const uint8_t *)info.data(), info.size());
-  EVP_PKEY_derive(pctx, key_.data(), &outlen);
-  EVP_PKEY_CTX_free(pctx);
+  EVP_KDF_derive(kctx, key_.data(), key_.size(), params);
+
+  EVP_KDF_CTX_free(kctx);
+  EVP_KDF_free(kdf);
 
   return 0;
 }
+
+std::vector<uint8_t> HAPCrypto::get_key() { return key_; };
 
 int HAPCrypto::set_nonce(std::string label) {
   nonce_ = {0x00, 0x00, 0x00, 0x00};
@@ -58,19 +68,41 @@ std::vector<uint8_t> HAPCrypto::chacha_decrypt() {
   std::vector<uint8_t> plaintext(cipherLen_);
   int outlen = 0;
 
-  EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-  EVP_DecryptInit_ex(ctx, EVP_chacha20_poly1305(), nullptr, key_.data(),
+  EVP_DecryptInit_ex(cipherCtx_, EVP_chacha20_poly1305(), nullptr, key_.data(),
                      nonce_.data());
-  EVP_DecryptUpdate(ctx, plaintext.data(), &outlen, cipherText_.data(),
+  EVP_DecryptUpdate(cipherCtx_, plaintext.data(), &outlen, cipherText_.data(),
                     cipherLen_);
-  EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, 16,
+  EVP_CIPHER_CTX_ctrl(cipherCtx_, EVP_CTRL_AEAD_SET_TAG, 16,
                       (void *)(authTag_.data()));
-  int ok = EVP_DecryptFinal_ex(ctx, plaintext.data() + outlen, &outlen);
-  EVP_CIPHER_CTX_free(ctx);
+  int ok = EVP_DecryptFinal_ex(cipherCtx_, plaintext.data() + outlen, &outlen);
 
   if (ok <= 0)
     throw std::runtime_error("ChaCha20-Poly1305 tag verification failed");
   return plaintext;
+}
+
+std::vector<uint8_t> HAPCrypto::chacha_encrypt(std::vector<uint8_t> payload) {
+  int outlen = 0;
+  std::vector<uint8_t> cipherText(payload.size());
+  EVP_EncryptInit_ex(cipherCtx_, EVP_chacha20_poly1305(), nullptr, key_.data(),
+                     nonce_.data());
+  EVP_EncryptUpdate(cipherCtx_, cipherText.data(), &outlen, payload.data(),
+                    payload.size());
+  int finalOutLen = 0;
+  int ok =
+      EVP_EncryptFinal_ex(cipherCtx_, cipherText.data() + outlen, &finalOutLen);
+
+  EVP_CIPHER_CTX_ctrl(cipherCtx_, EVP_CTRL_AEAD_SET_TAG, 16,
+                      (void *)(authTag_.data()));
+
+  if (ok <= 0) {
+    std::cerr << "Error encrypting submessage" << std::endl;
+    return std::vector<uint8_t>();
+  }
+
+  cipherText.insert(cipherText.end(), authTag_.begin(), authTag_.end());
+
+  return cipherText;
 }
 
 int HAPCrypto::M5_verification(std::vector<uint8_t> identifier,

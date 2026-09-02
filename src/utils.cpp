@@ -24,3 +24,17 @@ std::string chars_to_hex(const std::vector<uint8_t> &data) {
   }
   return ss.str();
 }
+
+std::string remove_colon(const std::string str) {
+  std::string str2;
+  for (const auto c : str) {
+    switch (c) {
+    case ':':
+      break;
+    default:
+      str2.push_back(c);
+    }
+  }
+
+  return str2;
+}
