@@ -329,39 +329,40 @@ int RTSPParser::pair_setup_m4() {
   err = tlv8Encoder_->encode();
 
   if (err < 0) {
-    std::cerr << "Error encoding M2 message." << std::endl;
+    std::cerr << "Error encoding SRP M2 message." << std::endl;
     rtsp_post_pair_error();
     return err;
   }
+
+  cryptoHandler_->set_session_key(srpHandler_->get_session_key());
 
   return err;
 }
 
 int RTSPParser::pair_setup_m5() {
-  hapHandler_ = create_hap_handler(srpHandler_->get_session_key());
+  int err = cryptoHandler_->hkdf_sha512("Pair-Setup-Encrypt-Salt",
+                                        "Pair-Setup-Encrypt-Info");
 
-  int err = hapHandler_->hkdf_sha512("Pair-Setup-Encrypt-Salt",
-                                     "Pair-Setup-Encrypt-Info");
+  cryptoHandler_->set_encrypt_key(cryptoHandler_->get_hkdf_key());
 
-  hapHandler_->set_encrypt_key(hapHandler_->get_key());
+  err = cryptoHandler_->set_nonce("PS-Msg05");
 
-  err = hapHandler_->set_nonce("PS-Msg05");
-
-  hapHandler_->set_cipher_tag(tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
-  std::vector<uint8_t> blob = hapHandler_->chacha_decrypt();
+  cryptoHandler_->set_cipher_tag(
+      tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
+  std::vector<uint8_t> blob = cryptoHandler_->chacha_decrypt();
 
   tlv8Decoder_->set_sub_message(blob);
   tlv8Decoder_->decode_sub();
 
-  err = hapHandler_->hkdf_sha512("Pair-Setup-Controller-Sign-Salt",
-                                 "Pair-Setup-Controller-Sign-Info");
+  err = cryptoHandler_->hkdf_sha512("Pair-Setup-Controller-Sign-Salt",
+                                    "Pair-Setup-Controller-Sign-Info");
 
   for (auto c : tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER)) {
     printf("%c", c);
   }
   std::cout << std::endl;
 
-  int ok = hapHandler_->M5_verification(
+  int ok = cryptoHandler_->M5_verification(
       tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER),
       tlv8Decoder_->read_sub_message(TLV8_PK),
       tlv8Decoder_->read_sub_message(TLV8_SIGNATURE));
@@ -382,10 +383,13 @@ int RTSPParser::pair_setup_m5() {
 }
 
 int RTSPParser::pair_setup_m6() {
-  int err = hapHandler_->hkdf_sha512("Pair-Setup-Accessory-Sign-Salt",
-                                     "Pair-Setup-Accessory-Sign-Info");
-  err = cryptoHandler_->set_accessory_x(hapHandler_->get_key());
-  err = cryptoHandler_->set_signature();
+  int err = cryptoHandler_->hkdf_sha512("Pair-Setup-Accessory-Sign-Salt",
+                                        "Pair-Setup-Accessory-Sign-Info");
+
+  err = cryptoHandler_->set_accessory_x(cryptoHandler_->get_hkdf_key());
+  err = cryptoHandler_->set_signature(cryptoHandler_->get_accessory_x(),
+                                      cryptoHandler_->get_identifier(),
+                                      cryptoHandler_->get_public_key());
 
   std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> subMessageMap = {
       {TLV8_IDENTIFIER, cryptoHandler_->get_identifier()},
@@ -396,12 +400,10 @@ int RTSPParser::pair_setup_m6() {
   tlv8Encoder_->set_map(subMessageMap);
   tlv8Encoder_->encode();
 
-  err = hapHandler_->set_nonce("PS-Msg06");
-
-  hapHandler_->set_key(hapHandler_->get_encrypt_key());
+  err = cryptoHandler_->set_nonce("PS-Msg06");
 
   auto subEncryptedSubmessage =
-      hapHandler_->chacha_encrypt(tlv8Encoder_->get_body());
+      cryptoHandler_->chacha_encrypt(tlv8Encoder_->get_body());
 
   std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
       {TLV8_STATE, {0x06}},
@@ -415,23 +417,119 @@ int RTSPParser::pair_setup_m6() {
 }
 
 int RTSPParser::rtsp_post_pair_verify() {
-  std::cerr << "Encountered error, authentication error." << std::endl;
-  uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2
-                   0x07, 0x01, 0x02}; // Error = Authentication
+  tlv8Decoder_->reinterpret_message((const char *)body_, contentLength_);
+  tlv8Decoder_->decode();
+  auto tlv8State = tlv8Decoder_->read_message(TLV8_STATE);
+
+  std::cout << "Decoding message." << std::endl;
+
+  int err = 0;
+
+  if (tlv8State.size() != 1) {
+    err = -1;
+    std::cerr << "Method size is not correct." << std::endl;
+    rtsp_post_pair_error();
+
+    return err;
+  }
+
+  std::vector<uint8_t> body;
+  uint8_t currentState = tlv8Decoder_->read_message(TLV8_STATE)[0];
+
+  printf("Method: %02x\n", currentState);
+
+  switch (currentState) {
+
+  case 0x01:
+
+    // rtsp_post_pair_error();
+    err = pair_verify_m2();
+
+    break;
+  case 0x03:
+    err = pair_verify_m4();
+
+    break;
+  }
+
+  if (err < 0) {
+    std::cout << "Encountered Error, sending error message" << std::endl;
+    rtsp_post_pair_error();
+    return -1;
+  }
+
+  body = tlv8Encoder_->get_body();
 
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
+                            "Server: AirTunes/366.0\r\n"
                             "Content-Type: application/pairing+tlv8\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
-                            CSeq_, (int)sizeof(tlv));
+                            CSeq_, (int)body.size());
 
-  send(clientID_, header, header_len, 0);
-  send(clientID_, tlv, sizeof(tlv), 0);
+  std::cout << header << std::endl;
+  for (auto c : body)
+    std::cout << chars_to_hex({c}) << " ";
+
+  std::cout << std::endl;
+
+  std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
+
+  err = send(clientID_, header, header_len, 0);
+  err = send(clientID_, body.data(), body.size(), 0);
+
+  if (err < 0) {
+    std::cerr << "Could not send message." << std::endl;
+    return -1;
+  }
 
   return 0;
 };
+
+int RTSPParser::pair_verify_m2() {
+  cryptoHandler_->set_client_ephemeral_pub(tlv8Decoder_->read_message(TLV8_PK));
+  cryptoHandler_->calculate_shared_key();
+
+  cryptoHandler_->set_signature(cryptoHandler_->get_ephemeral_key(),
+                                cryptoHandler_->get_identifier(),
+                                cryptoHandler_->get_client_ephemeral_key());
+
+  cryptoHandler_->set_encrypt_key(cryptoHandler_->get_shared_key());
+
+  std::cout << chars_to_hex(cryptoHandler_->get_shared_key()) << std::endl;
+
+  cryptoHandler_->hkdf_sha512("Pair-Verify-Encrypt-Salt",
+                              "Pair-Verify-Encrypt-Info");
+
+  cryptoHandler_->set_encrypt_key(cryptoHandler_->get_hkdf_key());
+
+  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> subMessageMap = {
+      {TLV8_IDENTIFIER, cryptoHandler_->get_identifier()},
+      {TLV8_SIGNATURE, cryptoHandler_->get_signature()},
+  };
+
+  tlv8Encoder_->set_map(subMessageMap);
+  tlv8Encoder_->encode();
+
+  cryptoHandler_->set_nonce("PV-Msg02");
+
+  auto encryptedSubMessage =
+      cryptoHandler_->chacha_encrypt(tlv8Encoder_->get_body());
+
+  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
+      {TLV8_STATE, {0x02}},
+      {TLV8_PK, cryptoHandler_->get_ephemeral_key()},
+      {TLV8_ENCRYPTED_DATA, encryptedSubMessage},
+  };
+
+  tlv8Encoder_->set_map(messageMap);
+  tlv8Encoder_->encode();
+
+  return 0;
+}
+int RTSPParser::pair_verify_m4() { return 0; }
 
 int RTSPParser::rtsp_post_pair_error() {
   uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2

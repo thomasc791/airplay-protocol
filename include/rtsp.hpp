@@ -2,7 +2,6 @@
 
 #include "crypto.hpp"
 #include "flags.hpp"
-#include "hap_crypto.hpp"
 #include "pairing-manager.hpp"
 #include "plist.hpp"
 #include "srp.hpp"
@@ -31,7 +30,6 @@ private:
   PlistWriter plistWriter_;
   char header[256];
 
-  std::unique_ptr<HAPCrypto> hapHandler_;
   std::unique_ptr<SRPHandler> srpHandler_;
   std::shared_ptr<CryptoHandler> cryptoHandler_;
   std::shared_ptr<FeatureFlags> featureFlags_;
@@ -49,8 +47,13 @@ private:
   int rtsp_post_commands();
   int rtsp_post_fp_setup();
   int rtsp_get_info();
+
   int rtsp_post_pair_verify();
+  int pair_verify_m2();
+  int pair_verify_m4();
+
   int rtsp_post_pair_error();
+
   int rtsp_post_pair_setup();
   int pair_setup_m2();
   int pair_setup_m4();
