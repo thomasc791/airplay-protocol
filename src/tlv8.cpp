@@ -70,14 +70,6 @@ void TLV8Decoder::decode_sub() {
     }
   }
 
-  for (auto [k, v] : subMessageMap_) {
-    printf("Key: %02x\n", k);
-    printf("Value: ");
-    for (auto vv : v)
-      printf("%02x ", vv);
-    std::cout << std::endl;
-  }
-
   return;
 }
 

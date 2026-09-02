@@ -19,6 +19,7 @@ AirPlayServer::AirPlayServer(const std::string &device_name, uint16_t port)
     : port_(port), deviceName_(device_name) {
 
   deviceID_ = get_system_mac_address();
+  pi_ = "767e31b2-9074-4be0-a3ad-4c0b491877ca";
 }
 
 AirPlayServer::~AirPlayServer() { stop(); }
@@ -52,7 +53,7 @@ int AirPlayServer::publish_airplay_service() {
       {"deviceid", deviceID_},
       {"features", featureFlags_->getHex()},
       {"flags", statusFlags_->getHex()},
-      {"gid", "767e31b2-9074-4be0-a3ad-4c0b491877ca"},
+      {"gid", pi_},
       {"gcgl", "0"},
       {"model", "AudioAccessory6,1"},
       // {"pk", crypto_handler_->get_public_hex_string()},
@@ -77,7 +78,7 @@ int AirPlayServer::publish_raop_service() {
       // {"md", "2"},
       // {"vn", "65537"},
       // {"srcvers", "366.0"},
-      {"pi", "767e31b2-9074-4be0-a3ad-4c0b491877ca"},
+      {"pi", pi_},
       {"pw", "true"},
       // {"da", "true"},
       {"ft", featureFlags_->getHex()},
@@ -159,7 +160,7 @@ void AirPlayServer::handle_client(int clientID) {
   std::cout << "Created new RTSP handler for client with ID: " << clientID
             << std::endl
             << "Starting new RTSP parser..." << std::endl;
-  auto rtspParser = create_rtsp_parser(clientID, deviceID_, cryptoHandler_,
+  auto rtspParser = create_rtsp_parser(clientID, deviceID_, pi_, cryptoHandler_,
                                        featureFlags_, statusFlags_);
   char buffer[2048] = {0};
   while (running_) {

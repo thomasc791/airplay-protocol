@@ -15,7 +15,9 @@ namespace fs = std::filesystem;
 
 CryptoHandler::CryptoHandler() : priv_(32), pub_(32), pkey_(nullptr) {
   ctx_ = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, nullptr);
-  identifier_ = hex_to_chars(remove_colon(get_system_mac_address()));
+  std::string mac = get_system_mac_address();
+  std::cout << mac << std::endl;
+  identifier_ = std::vector<uint8_t>(mac.begin(), mac.end());
 
   store_retrieve_pkey();
 }
@@ -128,8 +130,8 @@ int CryptoHandler::set_accessory_x(std::vector<uint8_t> a) {
 
 int CryptoHandler::set_signature() {
   std::vector<uint8_t> messageInfo;
-  messageInfo.insert(messageInfo.end(), identifier_.begin(), identifier_.end());
   messageInfo.insert(messageInfo.end(), accessoryX_.begin(), accessoryX_.end());
+  messageInfo.insert(messageInfo.end(), identifier_.begin(), identifier_.end());
   messageInfo.insert(messageInfo.end(), pub_.begin(), pub_.end());
 
   EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
@@ -152,9 +154,14 @@ int CryptoHandler::set_signature() {
   return 1;
 }
 
-std::string CryptoHandler::get_public_hex_string() { return pub_key_hex_; }
-std::vector<uint8_t> CryptoHandler::get_public_key() { return pub_; }
-std::vector<uint8_t> CryptoHandler::get_signature() { return signature_; }
+std::string CryptoHandler::get_public_hex_string() const {
+  return pub_key_hex_;
+}
+std::vector<uint8_t> CryptoHandler::get_public_key() const { return pub_; }
+std::vector<uint8_t> CryptoHandler::get_signature() const { return signature_; }
+std::vector<uint8_t> CryptoHandler::get_identifier() const {
+  return identifier_;
+}
 
 std::shared_ptr<CryptoHandler> create_crypto_handler() {
   return std::make_shared<CryptoHandler>();

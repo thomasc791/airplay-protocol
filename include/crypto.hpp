@@ -16,9 +16,10 @@ public:
   int set_accessory_x(std::vector<uint8_t> a);
   int set_signature();
 
-  std::string get_public_hex_string();
-  std::vector<uint8_t> get_public_key();
-  std::vector<uint8_t> get_signature();
+  std::string get_public_hex_string() const;
+  std::vector<uint8_t> get_public_key() const;
+  std::vector<uint8_t> get_signature() const;
+  std::vector<uint8_t> get_identifier() const;
 
 private:
   std::vector<uint8_t> identifier_, priv_, pub_, signature_, accessoryX_;

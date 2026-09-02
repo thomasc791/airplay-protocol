@@ -13,7 +13,7 @@ class AirPlayServer {
 private:
   uint16_t port_;
   std::string deviceName_;
-  std::string deviceID_;
+  std::string deviceID_, pi_;
   std::atomic<bool> running_{false};
   std::thread server_thread_;
   std::unique_ptr<IMDnsService> mdns_;

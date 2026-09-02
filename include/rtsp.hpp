@@ -14,7 +14,7 @@
 
 class RTSPParser {
 public:
-  RTSPParser(int clientID, std::string macAddress,
+  RTSPParser(int clientID, std::string macAddress, std::string pi,
              std::shared_ptr<CryptoHandler> cryptoHandler,
              std::shared_ptr<FeatureFlags> featureFlags,
              std::shared_ptr<StatusFlags> statusFlags);
@@ -27,7 +27,7 @@ public:
 private:
   int clientID_, messageLength_, contentLength_, CSeq_;
   char *body_, *bodyBuffer_, *msg_;
-  std::string title_, msgHeader_, macAddress_;
+  std::string title_, msgHeader_, macAddress_, pi_;
   PlistWriter plistWriter_;
   char header[256];
 
@@ -61,7 +61,7 @@ private:
 };
 
 std::unique_ptr<RTSPParser>
-create_rtsp_parser(int clientID, std::string macAddress,
+create_rtsp_parser(int clientID, std::string macAddress, std::string pi,
                    std::shared_ptr<CryptoHandler> cryptoHandler,
                    std::shared_ptr<FeatureFlags> featureFlags,
                    std::shared_ptr<StatusFlags> statusFlags);

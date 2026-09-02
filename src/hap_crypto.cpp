@@ -39,8 +39,6 @@ int HAPCrypto::hkdf_sha512(const std::string &salt, const std::string &info) {
   return 0;
 }
 
-std::vector<uint8_t> HAPCrypto::get_key() { return key_; };
-
 int HAPCrypto::set_nonce(std::string label) {
   nonce_ = {0x00, 0x00, 0x00, 0x00};
   nonce_.insert(nonce_.end(), label.begin(), label.end());
@@ -92,8 +90,7 @@ std::vector<uint8_t> HAPCrypto::chacha_encrypt(std::vector<uint8_t> payload) {
   int ok =
       EVP_EncryptFinal_ex(cipherCtx_, cipherText.data() + outlen, &finalOutLen);
 
-  EVP_CIPHER_CTX_ctrl(cipherCtx_, EVP_CTRL_AEAD_SET_TAG, 16,
-                      (void *)(authTag_.data()));
+  EVP_CIPHER_CTX_ctrl(cipherCtx_, EVP_CTRL_AEAD_GET_TAG, 16, authTag_.data());
 
   if (ok <= 0) {
     std::cerr << "Error encrypting submessage" << std::endl;
@@ -134,6 +131,12 @@ int HAPCrypto::M5_verification(std::vector<uint8_t> identifier,
 
   return result;
 }
+
+void HAPCrypto::set_key(std::vector<uint8_t> ek) { key_ = ek; }
+void HAPCrypto::set_encrypt_key(std::vector<uint8_t> ek) { encryptKey_ = ek; }
+
+std::vector<uint8_t> HAPCrypto::get_key() const { return key_; };
+std::vector<uint8_t> HAPCrypto::get_encrypt_key() const { return encryptKey_; }
 
 std::unique_ptr<HAPCrypto> create_hap_handler(std::vector<uint8_t> sk) {
   return std::make_unique<HAPCrypto>(sk);

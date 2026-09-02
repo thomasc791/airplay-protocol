@@ -15,10 +15,14 @@ public:
 
   void set_cipher_tag(const std::vector<uint8_t> encryptedData);
 
+  void set_encrypt_key(std::vector<uint8_t> ek);
+  void set_key(std::vector<uint8_t> ek);
+
   std::vector<uint8_t> chacha_decrypt();
   std::vector<uint8_t> chacha_encrypt(std::vector<uint8_t> payload);
 
-  std::vector<uint8_t> get_key();
+  std::vector<uint8_t> get_key() const;
+  std::vector<uint8_t> get_encrypt_key() const;
 
   int set_nonce(std::string label);
   int M5_verification(std::vector<uint8_t> identifier,
@@ -26,7 +30,7 @@ public:
                       std::vector<uint8_t> signature);
 
 private:
-  std::vector<uint8_t> sk_, key_, nonce_, cipherText_, authTag_;
+  std::vector<uint8_t> sk_, key_, nonce_, cipherText_, authTag_, encryptKey_;
   EVP_CIPHER_CTX *cipherCtx_;
   size_t cipherLen_;
 };

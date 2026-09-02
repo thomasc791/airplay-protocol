@@ -17,12 +17,12 @@
 #include <sys/socket.h>
 #include <vector>
 
-RTSPParser::RTSPParser(int client_fd, std::string macAddress,
+RTSPParser::RTSPParser(int client_fd, std::string macAddress, std::string pi,
                        std::shared_ptr<CryptoHandler> cryptoHandler,
                        std::shared_ptr<FeatureFlags> featureFlags,
                        std::shared_ptr<StatusFlags> statusFlags)
     : clientID_(client_fd), contentLength_(), CSeq_(), msg_{},
-      macAddress_(macAddress), plistWriter_(), header{},
+      macAddress_(macAddress), pi_(pi), plistWriter_(), header{},
       cryptoHandler_(cryptoHandler), featureFlags_(featureFlags),
       statusFlags_(statusFlags) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
@@ -106,7 +106,7 @@ std::vector<uint8_t> RTSPParser::create_plist() {
       {"gcgl", V::string("0")},
       // {"pk", V::string(crypto_handler_->get_public_hex_string())},
       {"nameIsFactoryDefault", V::boolean(false)},
-      {"pi", V::string("767e31b2-9074-4be0-a3ad-4c0b491877ca")},
+      {"pi", V::string(pi_)},
       {"protocolVersion", V::string("1.1")},
       {"password", V::boolean(true)},
       {"sourceVersion", V::string("366.0")},
@@ -251,7 +251,6 @@ int RTSPParser::rtsp_post_pair_setup() {
   }
 
   body = tlv8Encoder_->get_body();
-  std::cout << chars_to_hex(body) << std::endl;
 
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
@@ -261,6 +260,12 @@ int RTSPParser::rtsp_post_pair_setup() {
                             "Content-Length: %d\r\n"
                             "\r\n",
                             CSeq_, (int)body.size());
+
+  std::cout << header << std::endl;
+  for (auto c : body)
+    std::cout << chars_to_hex({c}) << " ";
+
+  std::cout << std::endl;
 
   std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
 
@@ -338,6 +343,8 @@ int RTSPParser::pair_setup_m5() {
   int err = hapHandler_->hkdf_sha512("Pair-Setup-Encrypt-Salt",
                                      "Pair-Setup-Encrypt-Info");
 
+  hapHandler_->set_encrypt_key(hapHandler_->get_key());
+
   err = hapHandler_->set_nonce("PS-Msg05");
 
   hapHandler_->set_cipher_tag(tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
@@ -348,6 +355,11 @@ int RTSPParser::pair_setup_m5() {
 
   err = hapHandler_->hkdf_sha512("Pair-Setup-Controller-Sign-Salt",
                                  "Pair-Setup-Controller-Sign-Info");
+
+  for (auto c : tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER)) {
+    printf("%c", c);
+  }
+  std::cout << std::endl;
 
   int ok = hapHandler_->M5_verification(
       tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER),
@@ -376,7 +388,7 @@ int RTSPParser::pair_setup_m6() {
   err = cryptoHandler_->set_signature();
 
   std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> subMessageMap = {
-      {TLV8_IDENTIFIER, hex_to_chars(remove_colon(macAddress_))},
+      {TLV8_IDENTIFIER, cryptoHandler_->get_identifier()},
       {TLV8_PK, cryptoHandler_->get_public_key()},
       {TLV8_SIGNATURE, cryptoHandler_->get_signature()},
   };
@@ -385,8 +397,8 @@ int RTSPParser::pair_setup_m6() {
   tlv8Encoder_->encode();
 
   err = hapHandler_->set_nonce("PS-Msg06");
-  err = hapHandler_->hkdf_sha512("Pair-Setup-Encrypt-Salt",
-                                 "Pair-Setup-Encrypt-Info");
+
+  hapHandler_->set_key(hapHandler_->get_encrypt_key());
 
   auto subEncryptedSubmessage =
       hapHandler_->chacha_encrypt(tlv8Encoder_->get_body());
@@ -511,10 +523,10 @@ int RTSPParser::get_body() {
 }
 
 std::unique_ptr<RTSPParser>
-create_rtsp_parser(int clientID, std::string macAddress,
+create_rtsp_parser(int clientID, std::string macAddress, std::string pi,
                    std::shared_ptr<CryptoHandler> cryptoHandler,
                    std::shared_ptr<FeatureFlags> featureFlags,
                    std::shared_ptr<StatusFlags> statusFlags) {
-  return std::make_unique<RTSPParser>(clientID, macAddress, cryptoHandler,
+  return std::make_unique<RTSPParser>(clientID, macAddress, pi, cryptoHandler,
                                       featureFlags, statusFlags);
 }
