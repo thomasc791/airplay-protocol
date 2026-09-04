@@ -15,6 +15,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <sys/socket.h>
+#include <utility>
 #include <vector>
 
 RTSPParser::RTSPParser(int client_fd, std::string macAddress, std::string pi,
@@ -37,14 +38,14 @@ RTSPParser::~RTSPParser() {}
 
 int RTSPParser::set_client(int currentClient) {
   clientID_ = currentClient;
-  return 0;
+  return 1;
 }
 
 int RTSPParser::set_msg(char *tcpMessage, int len) {
   // ESP_LOGI(TAG, "Set message with length: %d", len);
   msg_ = tcpMessage;
   messageLength_ = len;
-  return 0;
+  return 1;
 }
 
 int RTSPParser::parse_message() {
@@ -64,10 +65,13 @@ int RTSPParser::parse_message() {
   } else if (strstr(msg_, "POST /command")) {
     rtsp_post_commands();
   } else if (strstr(msg_, "POST /fp-setup")) {
+    std::cout << "/fp-setup" << std::endl;
     rtsp_post_fp_setup();
   } else if (strstr(msg_, "POST /pair-setup")) {
+    std::cout << "/pair-setup" << std::endl;
     rtsp_post_pair_setup();
   } else if (strstr(msg_, "POST /pair-verify")) {
+    std::cout << "/pair-verify" << std::endl;
     rtsp_post_pair_verify();
   } else {
     std::cout << msg_ << std::endl;
@@ -86,14 +90,14 @@ int RTSPParser::parse_message() {
   memset(msg_, 0, MAX_MSG_BUFFER_SIZE);
   messageLength_ = 0;
 
-  return 0;
+  return 1;
 }
 
 int RTSPParser::reset_state() {
   CSeq_ = -1;
   contentLength_ = -1;
 
-  return 0;
+  return 1;
 }
 
 std::vector<uint8_t> RTSPParser::create_plist() {
@@ -133,11 +137,10 @@ int RTSPParser::rtsp_get_options() {
   send(clientID_, header, header_len, 0);
 
   std::cout << "Send rtsp get options" << std::endl;
-  return 0;
+  return 1;
 }
 
 int RTSPParser::rtsp_post_commands() {
-
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
@@ -168,7 +171,7 @@ int RTSPParser::rtsp_post_commands() {
   //   printf("%02x", empty_bplist[i]);
   // printf("\n");
 
-  return 0;
+  return 1;
 }
 
 int RTSPParser::rtsp_post_fp_setup() {
@@ -182,7 +185,7 @@ int RTSPParser::rtsp_post_fp_setup() {
                             CSeq_);
 
   send(clientID_, header, header_len, 0);
-  return 0;
+  return 1;
 }
 
 int RTSPParser::rtsp_get_info() {
@@ -202,7 +205,7 @@ int RTSPParser::rtsp_get_info() {
   if (send(clientID_, plist.data(), plist.size(), 0) < 0)
     std::cerr << "[RTSPParser] Header not sent correctly!" << std::endl;
 
-  return 0;
+  return 1;
 }
 
 int RTSPParser::rtsp_post_pair_setup() {
@@ -244,7 +247,7 @@ int RTSPParser::rtsp_post_pair_setup() {
     break;
   }
 
-  if (err < 0) {
+  if (err <= 0) {
     std::cout << "Encountered Error, sending error message" << std::endl;
     rtsp_post_pair_error();
     return -1;
@@ -261,23 +264,23 @@ int RTSPParser::rtsp_post_pair_setup() {
                             "\r\n",
                             CSeq_, (int)body.size());
 
+  std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
+
   std::cout << header << std::endl;
   for (auto c : body)
     std::cout << chars_to_hex({c}) << " ";
 
   std::cout << std::endl;
 
-  std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
-
   err = send(clientID_, header, header_len, 0);
   err = send(clientID_, body.data(), body.size(), 0);
 
-  if (err < 0) {
+  if (err <= 0) {
     std::cerr << "Could not send message." << std::endl;
     return -1;
   }
 
-  return 0;
+  return 1;
 };
 
 int RTSPParser::pair_setup_m2() {
@@ -285,20 +288,21 @@ int RTSPParser::pair_setup_m2() {
       {TLV8_STATE, {0x02}},
       {TLV8_SALT, srpHandler_->get_salt()},
       {TLV8_PK, srpHandler_->get_public_key()}};
+
   int err = tlv8Encoder_->set_map(messageMap);
   err = tlv8Encoder_->encode();
 
-  if (err < 0) {
+  if (err <= 0) {
     std::cerr << "Error encoding M2 message." << std::endl;
     return -1;
   }
-  return 0;
+  return 1;
 }
 
 int RTSPParser::pair_setup_m4() {
   int err = srpHandler_->set_A(tlv8Decoder_->read_message(TLV8_PK));
   err = srpHandler_->set_M1(tlv8Decoder_->read_message(TLV8_PROOF));
-  if (err < 0) {
+  if (err <= 0) {
     rtsp_post_pair_error();
     throw std::runtime_error("Error setting BigNum values");
   }
@@ -314,7 +318,7 @@ int RTSPParser::pair_setup_m4() {
   }
 
   err = srpHandler_->create_M2();
-  if (err < 0) {
+  if (err <= 0) {
     rtsp_post_pair_error();
     return err;
   }
@@ -328,7 +332,7 @@ int RTSPParser::pair_setup_m4() {
   err = tlv8Encoder_->set_map(messageMap);
   err = tlv8Encoder_->encode();
 
-  if (err < 0) {
+  if (err <= 0) {
     std::cerr << "Error encoding SRP M2 message." << std::endl;
     rtsp_post_pair_error();
     return err;
@@ -357,15 +361,17 @@ int RTSPParser::pair_setup_m5() {
   err = cryptoHandler_->hkdf_sha512("Pair-Setup-Controller-Sign-Salt",
                                     "Pair-Setup-Controller-Sign-Info");
 
-  for (auto c : tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER)) {
-    printf("%c", c);
-  }
-  std::cout << std::endl;
+  std::vector<uint8_t> messageInfo;
+  auto hkdfKey = cryptoHandler_->get_hkdf_key();
+  auto id = tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER);
+  auto pubKey = tlv8Decoder_->read_sub_message(TLV8_PK);
 
-  int ok = cryptoHandler_->M5_verification(
-      tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER),
-      tlv8Decoder_->read_sub_message(TLV8_PK),
-      tlv8Decoder_->read_sub_message(TLV8_SIGNATURE));
+  messageInfo.insert(messageInfo.end(), hkdfKey.begin(), hkdfKey.end());
+  messageInfo.insert(messageInfo.end(), id.begin(), id.end());
+  messageInfo.insert(messageInfo.end(), pubKey.begin(), pubKey.end());
+
+  int ok = cryptoHandler_->signature_verification(
+      messageInfo, pubKey, tlv8Decoder_->read_sub_message(TLV8_SIGNATURE));
 
   if (ok != 1) {
     std::cerr << "M5 Verification not OK. Quitting." << std::endl;
@@ -447,12 +453,18 @@ int RTSPParser::rtsp_post_pair_verify() {
 
     break;
   case 0x03:
+    err = pair_verify_m3();
+    if (err <= 0) {
+      std::cerr << "Error during verification of M3 message" << std::endl;
+      return -1;
+    }
+
     err = pair_verify_m4();
 
     break;
   }
 
-  if (err < 0) {
+  if (err <= 0) {
     std::cout << "Encountered Error, sending error message" << std::endl;
     rtsp_post_pair_error();
     return -1;
@@ -464,7 +476,7 @@ int RTSPParser::rtsp_post_pair_verify() {
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
                             "Server: AirTunes/366.0\r\n"
-                            "Content-Type: application/pairing+tlv8\r\n"
+                            "Content-Type: application/octet-stream\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
                             CSeq_, (int)body.size());
@@ -480,12 +492,12 @@ int RTSPParser::rtsp_post_pair_verify() {
   err = send(clientID_, header, header_len, 0);
   err = send(clientID_, body.data(), body.size(), 0);
 
-  if (err < 0) {
+  if (err <= 0) {
     std::cerr << "Could not send message." << std::endl;
     return -1;
   }
 
-  return 0;
+  return 1;
 };
 
 int RTSPParser::pair_verify_m2() {
@@ -497,8 +509,6 @@ int RTSPParser::pair_verify_m2() {
                                 cryptoHandler_->get_client_ephemeral_key());
 
   cryptoHandler_->set_encrypt_key(cryptoHandler_->get_shared_key());
-
-  std::cout << chars_to_hex(cryptoHandler_->get_shared_key()) << std::endl;
 
   cryptoHandler_->hkdf_sha512("Pair-Verify-Encrypt-Salt",
                               "Pair-Verify-Encrypt-Info");
@@ -527,9 +537,57 @@ int RTSPParser::pair_verify_m2() {
   tlv8Encoder_->set_map(messageMap);
   tlv8Encoder_->encode();
 
-  return 0;
+  return 1;
 }
-int RTSPParser::pair_verify_m4() { return 0; }
+
+int RTSPParser::pair_verify_m3() {
+  int err = cryptoHandler_->set_nonce("PV-Msg03");
+  cryptoHandler_->set_cipher_tag(
+      tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
+
+  auto decryptBlob = cryptoHandler_->chacha_decrypt();
+  tlv8Decoder_->set_sub_message(decryptBlob);
+  tlv8Decoder_->decode_sub();
+
+  auto [exists, pubKey] = pairingManager_->get_device_key(
+      tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER));
+
+  if (!exists) {
+    std::cerr << "Connecting device does not exist yet. Returning error."
+              << std::endl;
+    return -1;
+  }
+
+  std::vector<uint8_t> messageInfo;
+  auto clientEph = cryptoHandler_->get_client_ephemeral_key();
+  auto id = tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER);
+  auto serverEph = cryptoHandler_->get_ephemeral_key();
+
+  messageInfo.insert(messageInfo.end(), clientEph.begin(), clientEph.end());
+  messageInfo.insert(messageInfo.end(), id.begin(), id.end());
+  messageInfo.insert(messageInfo.end(), serverEph.begin(), serverEph.end());
+
+  err = cryptoHandler_->signature_verification(
+      messageInfo, pubKey, tlv8Decoder_->read_sub_message(TLV8_SIGNATURE));
+
+  if (err <= 0) {
+    std::cerr << "Error verifying client ephemeral key" << std::endl;
+    return err;
+  }
+
+  return err;
+}
+
+int RTSPParser::pair_verify_m4() {
+
+  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
+      {TLV8_STATE, {0x04}}};
+
+  tlv8Encoder_->set_map(messageMap);
+  tlv8Encoder_->encode();
+
+  return 1;
+}
 
 int RTSPParser::rtsp_post_pair_error() {
   uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2
@@ -546,7 +604,7 @@ int RTSPParser::rtsp_post_pair_error() {
   send(clientID_, header, header_len, 0);
   send(clientID_, tlv, sizeof(tlv), 0);
 
-  return 0;
+  return 1;
 }
 
 int RTSPParser::get_cseq() {
@@ -556,7 +614,7 @@ int RTSPParser::get_cseq() {
     return -1;
 
   sscanf(cseq, "CSeq: %d", &CSeq_);
-  return 0;
+  return 1;
 }
 
 int RTSPParser::get_content_length() {
@@ -567,7 +625,7 @@ int RTSPParser::get_content_length() {
 
   sscanf(len, "Content-Length: %d", &contentLength_);
 
-  return 0;
+  return 1;
 }
 
 int RTSPParser::get_title() {
@@ -576,7 +634,7 @@ int RTSPParser::get_title() {
     return -1;
 
   title_ = std::string((const char *)msg_, lineEnd);
-  return 0;
+  return 1;
 }
 
 int RTSPParser::get_body() {
@@ -613,11 +671,7 @@ int RTSPParser::get_body() {
     remaining -= receivedSize;
     bodyRead += receivedSize;
   }
-  for (size_t i = 0; i < uint(bodyRead); i++)
-    printf("%02x ", (unsigned char)body_[i]);
-  printf("\n");
-
-  return 0;
+  return 1;
 }
 
 std::unique_ptr<RTSPParser>

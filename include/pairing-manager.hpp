@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -12,14 +13,19 @@ public:
   ~PairingManager();
 
   void add_paired_device(
-      std::pair<std::vector<uint8_t>, std::vector<std::vector<uint8_t>>> entry);
+      std::pair<std::vector<uint8_t>, std::array<std::vector<uint8_t>, 2>>
+          entry);
+
+  std::tuple<bool, std::vector<uint8_t>>
+  get_device_key(std::vector<uint8_t> identifier);
 
 private:
-  std::map<std::vector<uint8_t>, std::vector<std::vector<uint8_t>>> pairingMap_;
+  std::map<std::vector<uint8_t>, std::array<std::vector<uint8_t>, 2>>
+      pairingMap_;
   std::string fName = "paired.info";
   std::filesystem::path filePath_;
 
-  std::pair<std::vector<uint8_t>, std::vector<std::vector<uint8_t>>>
+  std::pair<std::vector<uint8_t>, std::array<std::vector<uint8_t>, 2>>
   read_pair(std::stringstream &pair);
 };
 

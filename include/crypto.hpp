@@ -57,9 +57,9 @@ public:
   int calculate_shared_key();
   int hkdf_sha512(const std::string &salt, const std::string &info);
 
-  int M5_verification(std::vector<uint8_t> identifier,
-                      std::vector<uint8_t> ltpk,
-                      std::vector<uint8_t> signature);
+  int signature_verification(std::vector<uint8_t> identifier,
+                             std::vector<uint8_t> ltpk,
+                             std::vector<uint8_t> signature);
 
 private:
   std::vector<uint8_t> identifier_, signature_, accessoryX_;

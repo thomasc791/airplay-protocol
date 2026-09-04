@@ -50,6 +50,7 @@ private:
 
   int rtsp_post_pair_verify();
   int pair_verify_m2();
+  int pair_verify_m3();
   int pair_verify_m4();
 
   int rtsp_post_pair_error();

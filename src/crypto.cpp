@@ -82,7 +82,7 @@ int CryptoHandler::get_raw_keypair(EVP_PKEY *pkey) {
   EVP_PKEY_get_raw_private_key(pkey, priv_.data(), &priv_len);
   EVP_PKEY_get_raw_public_key(pkey, pub_.data(), &pub_len);
 
-  return 0;
+  return 1;
 }
 
 void CryptoHandler::set_client_ephemeral_pub(std::vector<uint8_t> epk) {
@@ -154,7 +154,7 @@ int CryptoHandler::store_retrieve_pkey() {
 
     publicKeyFile.close();
 
-    return 0;
+    return 1;
   } else {
     std::ifstream publicKeyFile(pubPath);
     std::ifstream privateKeyFile(privPath);
@@ -173,7 +173,7 @@ int CryptoHandler::store_retrieve_pkey() {
     privateKeyFile.close();
   }
 
-  return 0;
+  return 1;
 }
 
 int CryptoHandler::set_accessory_x(std::vector<uint8_t> a) {
@@ -340,7 +340,7 @@ int CryptoHandler::set_nonce(std::string label) {
     return -1;
   }
 
-  return 0;
+  return 1;
 }
 
 void CryptoHandler::set_cipher_tag(const std::vector<uint8_t> encryptedData) {
@@ -359,23 +359,12 @@ void CryptoHandler::set_session_key(std::vector<uint8_t> ek) {
   sharedKey_ = ek;
 }
 
-int CryptoHandler::M5_verification(std::vector<uint8_t> identifier,
-                                   std::vector<uint8_t> ltpk,
-                                   std::vector<uint8_t> signature) {
-
-  std::vector<uint8_t> messageInfo;
-  messageInfo.reserve(encryptKey_.size() + identifier.size() + ltpk.size());
-
-  messageInfo.insert(messageInfo.end(), hkdfKey_.begin(), hkdfKey_.end());
-  messageInfo.insert(messageInfo.end(), identifier.begin(), identifier.end());
-  messageInfo.insert(messageInfo.end(), ltpk.begin(), ltpk.end());
-
-  if (ltpk.size() != 32)
-    throw std::runtime_error(
-        "Long Term Public Key is not 32 bytes long. Quitting");
+int CryptoHandler::signature_verification(std::vector<uint8_t> messageInfo,
+                                          std::vector<uint8_t> pubKey,
+                                          std::vector<uint8_t> signature) {
 
   EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, nullptr,
-                                               ltpk.data(), ltpk.size());
+                                               pubKey.data(), pubKey.size());
 
   EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
   EVP_DigestVerifyInit(mdctx, nullptr, nullptr, nullptr, pkey);

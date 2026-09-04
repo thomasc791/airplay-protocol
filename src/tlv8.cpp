@@ -1,4 +1,5 @@
 #include "tlv8.hpp"
+#include "utils.hpp"
 #include <cstdio>
 #include <iostream>
 #include <memory>
@@ -130,7 +131,7 @@ int TLV8Encoder::set_map(
   }
 
   messageMap_ = m;
-  return 0;
+  return 1;
 }
 
 int TLV8Encoder::encode() {
@@ -184,7 +185,7 @@ int TLV8Encoder::input_long_message(uint8_t type, std::vector<uint8_t> m) {
 
   body_.insert(body_.end(), m.begin() + curr_, m.end());
 
-  return 0;
+  return 1;
 }
 
 int TLV8Encoder::input_short_message(uint8_t type,
@@ -198,7 +199,7 @@ int TLV8Encoder::input_short_message(uint8_t type,
   body_.push_back(message.size());
   body_.insert(body_.end(), message.begin(), message.end());
 
-  return 0;
+  return 1;
 }
 
 std::vector<uint8_t> TLV8Encoder::get_body() { return body_; }

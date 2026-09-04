@@ -153,7 +153,7 @@ int SRPHandler::set_A(std::vector<uint8_t> A) {
   A_ = BnPtr(raw, BN_free);
 
   rawA_ = A;
-  return 0;
+  return 1;
 }
 
 int SRPHandler::set_M1(std::vector<uint8_t> M1) {
@@ -163,7 +163,7 @@ int SRPHandler::set_M1(std::vector<uint8_t> M1) {
 
   M1_ = BnPtr(raw, BN_free);
   rawM1_ = M1;
-  return 0;
+  return 1;
 }
 
 int SRPHandler::client_proof() {
@@ -209,7 +209,7 @@ int SRPHandler::client_proof() {
 
   M1Expected_ = BnPtr(rawM1Expected, BN_free);
 
-  return 0;
+  return 1;
 }
 
 bool SRPHandler::validate_M1() {
@@ -241,7 +241,7 @@ int SRPHandler::create_M2() {
   }
   M2_ = BnPtr(M2raw, BN_free);
 
-  return 0;
+  return 1;
 }
 
 std::vector<uint8_t> SRPHandler::get_salt() {

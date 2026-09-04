@@ -1,6 +1,7 @@
 #include "pairing-manager.hpp"
 #include "utils.hpp"
 
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -63,11 +64,25 @@ PairingManager::~PairingManager() {
 }
 
 void PairingManager::add_paired_device(
-    std::pair<std::vector<uint8_t>, std::vector<std::vector<uint8_t>>> entry) {
+    std::pair<std::vector<uint8_t>, std::array<std::vector<uint8_t>, 2>>
+        entry) {
   pairingMap_[entry.first] = entry.second;
 }
 
-std::pair<std::vector<uint8_t>, std::vector<std::vector<uint8_t>>>
+std::tuple<bool, std::vector<uint8_t>>
+PairingManager::get_device_key(std::vector<uint8_t> identifier) {
+
+  for (auto [k, v] : pairingMap_) {
+    std::cout << chars_to_hex(k) << std::endl;
+  }
+
+  if (pairingMap_.count(identifier))
+    return {true, pairingMap_[identifier][0]};
+
+  return {false, std::vector<uint8_t>()};
+}
+
+std::pair<std::vector<uint8_t>, std::array<std::vector<uint8_t>, 2>>
 PairingManager::read_pair(std::stringstream &pair) {
   std::string identifier;
   std::string publicKey;
