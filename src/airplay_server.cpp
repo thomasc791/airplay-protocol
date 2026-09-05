@@ -178,22 +178,25 @@ void AirPlayServer::handle_client(int clientID) {
     }
 
     rtspParser->set_msg(buffer, bytes_read);
-    if (!verified_) {
+    if (!rtspParser->is_verified()) {
       rtspParser->parse_message();
-      verified_ = rtspParser->is_verified();
-    } else if (verified_ && !cipherTransporter) {
+    } else if (rtspParser->is_verified() && !cipherTransporter) {
       cipherTransporter =
           create_cipher_transporter(rtspParser->get_shared_key());
     }
     if (cipherTransporter) {
       cipherTransporter->set_message(buffer, bytes_read);
-      cipherTransporter->cipher_length();
-      // cipherTransporter->set_message(buffer, bytes_read);
+
+      auto aad = cipherTransporter->cipher_length();
       auto [cipher, tag] = get_cipher_tag(cipherTransporter->get_cipher());
       auto nonce = cipherTransporter->get_read_nonce();
-      cipherTransporter->decrypt(cipher, nonce, tag);
-      // auto decodedBlob = cipherTransporter->get_decoded_str();
-      // rtspParser->set_msg(decodedBlob.data(), decodedBlob.size());
+
+      cipherTransporter->decrypt(cipher, aad, nonce, tag);
+
+      auto decryptedChars = cipherTransporter->get_decrypted();
+      std::string decrypted(decryptedChars.begin(), decryptedChars.end());
+
+      rtspParser->set_msg(decrypted.data(), decrypted.size());
     }
   }
   close(clientID);

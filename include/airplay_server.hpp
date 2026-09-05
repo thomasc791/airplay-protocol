@@ -15,7 +15,6 @@ private:
   std::string deviceName_;
   std::string deviceID_, pi_;
   std::atomic<bool> running_{false};
-  std::atomic<bool> verified_{false};
   std::thread server_thread_;
   std::unique_ptr<IMDnsService> mdns_;
   std::shared_ptr<FeatureFlags> featureFlags_;
