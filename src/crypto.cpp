@@ -10,6 +10,7 @@
 #include <openssl/kdf.h>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -22,8 +23,8 @@ CryptoHandler::CryptoHandler()
   ctx_ = make_ctx(EVP_PKEY_ED25519);
   std::string mac = get_system_mac_address();
   std::cout << mac << std::endl;
-  authTag_ = std::vector<uint8_t>(16);
-  identifier_ = std::vector<uint8_t>(mac.begin(), mac.end());
+  authTag_ = u8Vec_t(16);
+  identifier_ = u8Vec_t(mac.begin(), mac.end());
 
   store_retrieve_pkey();
   generate_ephemeral_key();
@@ -86,7 +87,7 @@ int CryptoHandler::get_raw_keypair(EVP_PKEY *pkey) {
   return 1;
 }
 
-void CryptoHandler::set_client_ephemeral_pub(std::vector<uint8_t> epk) {
+void CryptoHandler::set_client_ephemeral_pub(u8Vec_t epk) {
   clientEphemeralPub_ = epk;
 
   EVP_PKEY *clientEphRaw = EVP_PKEY_new_raw_public_key(
@@ -181,7 +182,7 @@ int CryptoHandler::store_retrieve_pkey() {
   return 1;
 }
 
-int CryptoHandler::set_accessory_x(std::vector<uint8_t> a) {
+int CryptoHandler::set_accessory_x(u8Vec_t a) {
   if (a.size() != 32) {
     std::cerr << "Error setting accessory" << std::endl;
     return -1;
@@ -191,9 +192,8 @@ int CryptoHandler::set_accessory_x(std::vector<uint8_t> a) {
   return 1;
 }
 
-int CryptoHandler::set_signature(std::vector<uint8_t> a, std::vector<uint8_t> b,
-                                 std::vector<uint8_t> c) {
-  std::vector<uint8_t> messageInfo;
+int CryptoHandler::set_signature(u8Vec_t a, u8Vec_t b, u8Vec_t c) {
+  u8Vec_t messageInfo;
   messageInfo.insert(messageInfo.end(), a.begin(), a.end());
   messageInfo.insert(messageInfo.end(), b.begin(), b.end());
   messageInfo.insert(messageInfo.end(), c.begin(), c.end());
@@ -205,7 +205,7 @@ int CryptoHandler::set_signature(std::vector<uint8_t> a, std::vector<uint8_t> b,
   }
 
   size_t sigLen = 64;
-  signature_ = std::vector<uint8_t>(sigLen);
+  signature_ = u8Vec_t(sigLen);
 
   if (EVP_DigestSign(mdctx, signature_.data(), &sigLen, messageInfo.data(),
                      messageInfo.size()) != 1) {
@@ -218,22 +218,23 @@ int CryptoHandler::set_signature(std::vector<uint8_t> a, std::vector<uint8_t> b,
   return 1;
 }
 
-std::vector<uint8_t> CryptoHandler::chacha_decrypt() {
+u8Vec_t CryptoHandler::chacha_decrypt(u8Vec_t cipher, u8Vec_t nonce,
+                                      u8Vec_t tag) {
   EVP_CIPHER_CTX *cipherCtx = EVP_CIPHER_CTX_new();
-  std::vector<uint8_t> plaintext(cipherLen_);
+  u8Vec_t plaintext(cipher.size());
   int outlen = 0;
 
   EVP_DecryptInit_ex(cipherCtx, EVP_chacha20_poly1305(), nullptr,
-                     encryptKey_.data(), nonce_.data());
-  EVP_DecryptUpdate(cipherCtx, plaintext.data(), &outlen, cipherText_.data(),
-                    cipherLen_);
-  EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_TAG, 16, authTag_.data());
+                     encryptKey_.data(), nonce.data());
+  EVP_DecryptUpdate(cipherCtx, plaintext.data(), &outlen, cipher.data(),
+                    cipher.size());
+  EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_TAG, 16, tag.data());
   int ok = EVP_DecryptFinal_ex(cipherCtx, plaintext.data() + outlen, &outlen);
 
   if (ok <= 0) {
     std::cerr << "Error encrypting submessage" << std::endl;
     EVP_CIPHER_CTX_free(cipherCtx);
-    return std::vector<uint8_t>();
+    return u8Vec_t();
   }
 
   EVP_CIPHER_CTX_free(cipherCtx);
@@ -241,11 +242,10 @@ std::vector<uint8_t> CryptoHandler::chacha_decrypt() {
   return plaintext;
 }
 
-std::vector<uint8_t>
-CryptoHandler::chacha_encrypt(std::vector<uint8_t> payload) {
+u8Vec_t CryptoHandler::chacha_encrypt(u8Vec_t payload) {
   EVP_CIPHER_CTX *cipherCtx = EVP_CIPHER_CTX_new();
   int outlen = 0;
-  std::vector<uint8_t> cipherText(payload.size());
+  u8Vec_t cipherText(payload.size());
 
   EVP_EncryptInit_ex(cipherCtx, EVP_chacha20_poly1305(), nullptr,
                      encryptKey_.data(), nonce_.data());
@@ -261,7 +261,7 @@ CryptoHandler::chacha_encrypt(std::vector<uint8_t> payload) {
   if (ok <= 0) {
     std::cerr << "Error encrypting submessage" << std::endl;
     EVP_CIPHER_CTX_free(cipherCtx);
-    return std::vector<uint8_t>();
+    return u8Vec_t();
   }
 
   cipherText.insert(cipherText.end(), authTag_.begin(), authTag_.end());
@@ -271,71 +271,29 @@ CryptoHandler::chacha_encrypt(std::vector<uint8_t> payload) {
   return cipherText;
 }
 
-int CryptoHandler::hkdf_sha512(const std::string &salt,
-                               const std::string &info) {
-  hkdfKey_.clear();
-  hkdfKey_.resize(32);
-
-  EVP_KDF *kdf = EVP_KDF_fetch(nullptr, "HKDF", nullptr);
-  EVP_KDF_CTX *kctx = EVP_KDF_CTX_new(kdf);
-
-  OSSL_PARAM params[5];
-  params[0] = OSSL_PARAM_construct_utf8_string("digest", (char *)"SHA512", 0);
-  params[1] = OSSL_PARAM_construct_octet_string(
-      "key", (void *)sharedKey_.data(), sharedKey_.size());
-  params[2] = OSSL_PARAM_construct_octet_string("salt", (void *)salt.data(),
-                                                salt.size());
-  params[3] = OSSL_PARAM_construct_octet_string("info", (void *)info.data(),
-                                                info.size());
-  params[4] = OSSL_PARAM_construct_end();
-
-  if (EVP_KDF_derive(kctx, hkdfKey_.data(), hkdfKey_.size(), params) <= 0) {
-    std::cerr << "Error deriving KDF key" << std::endl;
-    return -1;
-  }
-
-  EVP_KDF_CTX_free(kctx);
-  EVP_KDF_free(kdf);
-
-  return 1;
-}
-
 std::string CryptoHandler::get_public_hex_string() const {
   return pub_key_hex_;
 }
-std::vector<uint8_t> CryptoHandler::get_accessory_x() const {
-  return accessoryX_;
-}
-std::vector<uint8_t> CryptoHandler::get_public_key() const {
+u8Vec_t CryptoHandler::get_accessory_x() const { return accessoryX_; }
+u8Vec_t CryptoHandler::get_public_key() const {
   if (pub_.size() != 32)
     std::cerr << "Public key is not 32 bytes long" << std::endl;
 
   return pub_;
 }
-std::vector<uint8_t> CryptoHandler::get_hkdf_key() const { return hkdfKey_; }
-std::vector<uint8_t> CryptoHandler::get_shared_key() const {
-  return sharedKey_;
-}
-std::vector<uint8_t> CryptoHandler::get_signature() const { return signature_; }
-std::vector<uint8_t> CryptoHandler::get_identifier() const {
-  return identifier_;
-}
+u8Vec_t CryptoHandler::get_shared_key() const { return sharedKey_; }
+u8Vec_t CryptoHandler::get_signature() const { return signature_; }
+u8Vec_t CryptoHandler::get_identifier() const { return identifier_; }
 
-std::vector<uint8_t> CryptoHandler::get_ephemeral_key() const {
-  return ephemeralPub_;
-}
+u8Vec_t CryptoHandler::get_ephemeral_key() const { return ephemeralPub_; }
 
-std::vector<uint8_t> CryptoHandler::get_encrypt_key() const {
-  return encryptKey_;
-}
+u8Vec_t CryptoHandler::get_encrypt_key() const { return encryptKey_; }
 
-std::vector<uint8_t> CryptoHandler::get_client_ephemeral_key() const {
+u8Vec_t CryptoHandler::get_client_ephemeral_key() const {
   return clientEphemeralPub_;
 }
 
-void CryptoHandler::set_encrypt_key(std::vector<uint8_t> ek) {
-  encryptKey_ = ek;
-}
+void CryptoHandler::set_encrypt_key(u8Vec_t ek) { encryptKey_ = ek; }
 
 int CryptoHandler::set_nonce(std::string label) {
   nonce_ = {0x00, 0x00, 0x00, 0x00};
@@ -349,25 +307,10 @@ int CryptoHandler::set_nonce(std::string label) {
   return 1;
 }
 
-void CryptoHandler::set_cipher_tag(const std::vector<uint8_t> encryptedData) {
-  if (encryptedData.size() >= 16) {
-    cipherLen_ = encryptedData.size() - 16;
+void CryptoHandler::set_session_key(u8Vec_t ek) { sharedKey_ = ek; }
 
-    cipherText_ = std::vector<uint8_t>(encryptedData.begin(),
-                                       encryptedData.begin() + cipherLen_);
-    authTag_ =
-        std::vector<uint8_t>(encryptedData.end() - 16, encryptedData.end());
-  }
-}
-
-void CryptoHandler::set_key(std::vector<uint8_t> ek) { hkdfKey_ = ek; }
-void CryptoHandler::set_session_key(std::vector<uint8_t> ek) {
-  sharedKey_ = ek;
-}
-
-int CryptoHandler::signature_verification(std::vector<uint8_t> messageInfo,
-                                          std::vector<uint8_t> pubKey,
-                                          std::vector<uint8_t> signature) {
+int CryptoHandler::signature_verification(u8Vec_t messageInfo, u8Vec_t pubKey,
+                                          u8Vec_t signature) {
 
   EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, nullptr,
                                                pubKey.data(), pubKey.size());
@@ -382,6 +325,49 @@ int CryptoHandler::signature_verification(std::vector<uint8_t> messageInfo,
   EVP_MD_CTX_free(mdctx);
 
   return result;
+}
+
+u8Vec_t hkdf_sha512(const std::string &salt, const std::string &info,
+                    u8Vec_t key) {
+  u8Vec_t hkdfKey(32);
+
+  EVP_KDF *kdf = EVP_KDF_fetch(nullptr, "HKDF", nullptr);
+  EVP_KDF_CTX *kctx = EVP_KDF_CTX_new(kdf);
+
+  OSSL_PARAM params[5];
+  params[0] = OSSL_PARAM_construct_utf8_string("digest", (char *)"SHA512", 0);
+  params[1] =
+      OSSL_PARAM_construct_octet_string("key", (void *)key.data(), key.size());
+  params[2] = OSSL_PARAM_construct_octet_string("salt", (void *)salt.data(),
+                                                salt.size());
+  params[3] = OSSL_PARAM_construct_octet_string("info", (void *)info.data(),
+                                                info.size());
+  params[4] = OSSL_PARAM_construct_end();
+
+  if (EVP_KDF_derive(kctx, hkdfKey.data(), hkdfKey.size(), params) <= 0) {
+    std::cerr << "Error deriving KDF key" << std::endl;
+    hkdfKey = u8Vec_t();
+  }
+
+  EVP_KDF_CTX_free(kctx);
+  EVP_KDF_free(kdf);
+
+  return hkdfKey;
+}
+
+std::tuple<u8Vec_t, u8Vec_t> get_cipher_tag(const u8Vec_t encryptedData) {
+
+  if (encryptedData.size() < 16) {
+    std::cerr << "Encrypted data size is too small" << std::endl;
+    return {u8Vec_t(), u8Vec_t()};
+  }
+  auto cipherLen = encryptedData.size() - 16;
+
+  auto cipherText =
+      u8Vec_t(encryptedData.begin(), encryptedData.begin() + cipherLen);
+  auto authTag = u8Vec_t(encryptedData.end() - 16, encryptedData.end());
+
+  return {cipherText, authTag};
 }
 
 std::unique_ptr<CryptoHandler> create_crypto_handler() {

@@ -1,18 +1,19 @@
 #include "airplay_server.hpp"
+#include "crypto.hpp"
 #include "flags.hpp"
 #include "pairing-manager.hpp"
 #include "rtsp.hpp"
+#include "transport_crypto.hpp"
 #include "utils.hpp"
 
 #include <avahi-client/client.h>
 #include <cstring>
 #include <ifaddrs.h>
-#include <iomanip>
 #include <iostream>
+#include <memory>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netpacket/packet.h>
-#include <sstream>
 #include <unistd.h>
 
 AirPlayServer::AirPlayServer(const std::string &device_name, uint16_t port)
@@ -52,8 +53,8 @@ int AirPlayServer::publish_airplay_service() {
   std::map<std::string, std::string> txt = {
       {"acl", "0"},
       {"deviceid", deviceID_},
-      {"features", featureFlags_->getHex()},
-      {"flags", statusFlags_->getHex()},
+      {"features", featureFlags_->get_hex()},
+      {"flags", statusFlags_->get_hex()},
       {"gid", pi_},
       {"gcgl", "0"},
       {"model", "AudioAccessory6,1"},
@@ -83,8 +84,8 @@ int AirPlayServer::publish_raop_service() {
       {"pk", chars_to_hex(pairingManager_->get_public_key())},
       {"pw", "true"},
       // {"da", "true"},
-      {"ft", featureFlags_->getHex()},
-      {"sf", statusFlags_->getHex()},
+      {"ft", featureFlags_->get_hex()},
+      {"sf", statusFlags_->get_hex()},
       // {"deviceid", device_id_},
   };
   mdns_->publish_service(deviceName_, "_raop._tcp", 5000, txt);
@@ -164,6 +165,8 @@ void AirPlayServer::handle_client(int clientID) {
             << "Starting new RTSP parser..." << std::endl;
   auto rtspParser = create_rtsp_parser(clientID, deviceID_, pi_, featureFlags_,
                                        statusFlags_, pairingManager_);
+  std::unique_ptr<CipherTransporter> cipherTransporter;
+
   char buffer[2048] = {0};
   while (running_) {
     memset(buffer, 0, sizeof(buffer));
@@ -175,47 +178,23 @@ void AirPlayServer::handle_client(int clientID) {
     }
 
     rtspParser->set_msg(buffer, bytes_read);
-    rtspParser->parse_message();
+    if (!verified_) {
+      rtspParser->parse_message();
+      verified_ = rtspParser->is_verified();
+    } else if (verified_ && !cipherTransporter) {
+      cipherTransporter =
+          create_cipher_transporter(rtspParser->get_shared_key());
+    }
+    if (cipherTransporter) {
+      cipherTransporter->set_message(buffer, bytes_read);
+      cipherTransporter->cipher_length();
+      // cipherTransporter->set_message(buffer, bytes_read);
+      auto [cipher, tag] = get_cipher_tag(cipherTransporter->get_cipher());
+      auto nonce = cipherTransporter->get_read_nonce();
+      cipherTransporter->decrypt(cipher, nonce, tag);
+      // auto decodedBlob = cipherTransporter->get_decoded_str();
+      // rtspParser->set_msg(decodedBlob.data(), decodedBlob.size());
+    }
   }
   close(clientID);
-}
-
-std::string get_system_mac_address() {
-  struct ifaddrs *ifaddr = nullptr;
-  if (getifaddrs(&ifaddr) == -1) {
-    return "00:11:22:33:44:08"; // Fallback MAC if call fails
-  }
-
-  std::string mac_str = "";
-
-  for (struct ifaddrs *ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
-    if (!ifa->ifa_addr)
-      continue;
-
-    // Skip loopback interfaces (lo) and inactive interfaces
-    if ((ifa->ifa_flags & IFF_LOOPBACK) || !(ifa->ifa_flags & IFF_UP)) {
-      continue;
-    }
-
-    // AF_PACKET is the socket family for Linux physical layer addresses
-    if (ifa->ifa_addr->sa_family == AF_PACKET) {
-      auto *s = reinterpret_cast<struct sockaddr_ll *>(ifa->ifa_addr);
-      if (s->sll_halen == 6) { // 6-byte Ethernet MAC address
-        std::ostringstream ss;
-        for (int i = 0; i < 6; ++i) {
-          if (i > 0)
-            ss << ":";
-          ss << std::uppercase << std::setfill('0') << std::setw(2) << std::hex
-             << static_cast<int>(s->sll_addr[i]);
-        }
-        mac_str = ss.str();
-        break; // Use the first active non-loopback interface (eth0, wlan0,
-               // etc.)
-      }
-    }
-  }
-
-  freeifaddrs(ifaddr);
-
-  return mac_str.empty() ? "00:11:22:33:44:55" : "5C:5F:67:60:A3:16";
 }

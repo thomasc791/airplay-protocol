@@ -80,10 +80,10 @@ int RTSPParser::parse_message() {
     std::cout << "Ruwe hex data:" << std::endl;
     for (int i = 0; i < messageLength_; i++) {
       printf("%02x ", (unsigned char)msg_[i]);
-      // Print maximaal de eerste 64 bytes om je terminal overzichtelijk te
-      // houden
     }
     printf("\n");
+
+    rtsp_decrypt_message();
   }
   printf("\n");
 
@@ -100,12 +100,12 @@ int RTSPParser::reset_state() {
   return 1;
 }
 
-std::vector<uint8_t> RTSPParser::create_plist() {
+u8Vec_t RTSPParser::create_plist() {
   using V = PlistWriter::Value;
 
   auto plist = plistWriter_.serialize(V::dict({
       {"deviceID", V::string(macAddress_)},
-      {"features", V::uint(featureFlags_->getRaw())},
+      {"features", V::uint(featureFlags_->get_raw())},
       {"model", V::string("AudioAccessory6,1")},
       {"gcgl", V::string("0")},
       {"nameIsFactoryDefault", V::boolean(false)},
@@ -114,7 +114,7 @@ std::vector<uint8_t> RTSPParser::create_plist() {
       {"protocolVersion", V::string("1.1")},
       {"password", V::boolean(true)},
       {"sourceVersion", V::string("366.0")},
-      {"statusFlags", V::uint(statusFlags_->getRaw())},
+      {"statusFlags", V::uint(statusFlags_->get_raw())},
       // {"audioFormats", V::array({V::dict({
       //                      {"type", V::uint(96)},
       //                      {"audioInputFormats", V::uint(0x01000000)},
@@ -189,7 +189,7 @@ int RTSPParser::rtsp_post_fp_setup() {
 }
 
 int RTSPParser::rtsp_get_info() {
-  std::vector<uint8_t> plist = create_plist();
+  u8Vec_t plist = create_plist();
 
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
@@ -225,7 +225,7 @@ int RTSPParser::rtsp_post_pair_setup() {
     return err;
   }
 
-  std::vector<uint8_t> body;
+  u8Vec_t body;
   uint8_t currentState = tlv8Decoder_->read_message(TLV8_STATE)[0];
 
   printf("Method: %02x\n", currentState);
@@ -284,7 +284,7 @@ int RTSPParser::rtsp_post_pair_setup() {
 };
 
 int RTSPParser::pair_setup_m2() {
-  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
+  std::vector<std::pair<TLV8Type_t, u8Vec_t>> messageMap = {
       {TLV8_STATE, {0x02}},
       {TLV8_SALT, srpHandler_->get_salt()},
       {TLV8_PK, srpHandler_->get_public_key()}};
@@ -323,7 +323,7 @@ int RTSPParser::pair_setup_m4() {
     return err;
   }
 
-  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
+  std::vector<std::pair<TLV8Type_t, u8Vec_t>> messageMap = {
       {TLV8_STATE, {0x04}},
       // {TLV8_PK, srpHandler_->get_public_key()},
       {TLV8_PROOF, srpHandler_->get_proof()},
@@ -344,25 +344,30 @@ int RTSPParser::pair_setup_m4() {
 }
 
 int RTSPParser::pair_setup_m5() {
-  int err = cryptoHandler_->hkdf_sha512("Pair-Setup-Encrypt-Salt",
-                                        "Pair-Setup-Encrypt-Info");
+  int err;
+  u8Vec_t hkdfKey =
+      hkdf_sha512("Pair-Setup-Encrypt-Salt", "Pair-Setup-Encrypt-Info",
+                  cryptoHandler_->get_shared_key());
+  if (hkdfKey.size() != 32)
+    err = -1;
 
-  cryptoHandler_->set_encrypt_key(cryptoHandler_->get_hkdf_key());
+  cryptoHandler_->set_encrypt_key(hkdfKey);
 
   err = cryptoHandler_->set_nonce("PS-Msg05");
 
-  cryptoHandler_->set_cipher_tag(
-      tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
-  std::vector<uint8_t> blob = cryptoHandler_->chacha_decrypt();
+  auto [cipher, tag] =
+      get_cipher_tag(tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
+  u8Vec_t blob =
+      cryptoHandler_->chacha_decrypt(cipher, cryptoHandler_->get_nonce(), tag);
 
   tlv8Decoder_->set_sub_message(blob);
   tlv8Decoder_->decode_sub();
 
-  err = cryptoHandler_->hkdf_sha512("Pair-Setup-Controller-Sign-Salt",
-                                    "Pair-Setup-Controller-Sign-Info");
+  hkdfKey = hkdf_sha512("Pair-Setup-Controller-Sign-Salt",
+                        "Pair-Setup-Controller-Sign-Info",
+                        cryptoHandler_->get_shared_key());
 
-  std::vector<uint8_t> messageInfo;
-  auto hkdfKey = cryptoHandler_->get_hkdf_key();
+  u8Vec_t messageInfo;
   auto id = tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER);
   auto pubKey = tlv8Decoder_->read_sub_message(TLV8_PK);
 
@@ -389,15 +394,19 @@ int RTSPParser::pair_setup_m5() {
 }
 
 int RTSPParser::pair_setup_m6() {
-  int err = cryptoHandler_->hkdf_sha512("Pair-Setup-Accessory-Sign-Salt",
-                                        "Pair-Setup-Accessory-Sign-Info");
+  int err;
+  auto hkdfKey = hkdf_sha512("Pair-Setup-Accessory-Sign-Salt",
+                             "Pair-Setup-Accessory-Sign-Info",
+                             cryptoHandler_->get_shared_key());
+  if (hkdfKey.size() != 32)
+    err = -1;
 
-  err = cryptoHandler_->set_accessory_x(cryptoHandler_->get_hkdf_key());
+  err = cryptoHandler_->set_accessory_x(hkdfKey);
   err = cryptoHandler_->set_signature(cryptoHandler_->get_accessory_x(),
                                       cryptoHandler_->get_identifier(),
                                       cryptoHandler_->get_public_key());
 
-  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> subMessageMap = {
+  std::vector<std::pair<TLV8Type_t, u8Vec_t>> subMessageMap = {
       {TLV8_IDENTIFIER, cryptoHandler_->get_identifier()},
       {TLV8_PK, cryptoHandler_->get_public_key()},
       {TLV8_SIGNATURE, cryptoHandler_->get_signature()},
@@ -411,7 +420,7 @@ int RTSPParser::pair_setup_m6() {
   auto subEncryptedSubmessage =
       cryptoHandler_->chacha_encrypt(tlv8Encoder_->get_body());
 
-  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
+  std::vector<std::pair<TLV8Type_t, u8Vec_t>> messageMap = {
       {TLV8_STATE, {0x06}},
       {TLV8_ENCRYPTED_DATA, subEncryptedSubmessage},
   };
@@ -439,7 +448,7 @@ int RTSPParser::rtsp_post_pair_verify() {
     return err;
   }
 
-  std::vector<uint8_t> body;
+  u8Vec_t body;
   uint8_t currentState = tlv8Decoder_->read_message(TLV8_STATE)[0];
 
   printf("Method: %02x\n", currentState);
@@ -450,38 +459,27 @@ int RTSPParser::rtsp_post_pair_verify() {
 
     // rtsp_post_pair_error();
     err = pair_verify_m2();
-
-    if (cryptoHandler_->pub_ == cryptoHandler_->firstPub_ &&
-        cryptoHandler_->priv_ == cryptoHandler_->firstPriv_) {
-      std::cout << "First generated keys and second generated keys are the same"
-                << std::endl;
-    } else {
-      std::cout
-          << "First generated keys and second generated keys are not the same"
-          << std::endl;
-    }
-
-    if (err <= 0) {
+    if (err <= 0)
       std::cout << "Error generating Pair-Verify M2" << std::endl;
-      return -1;
-    }
+
     break;
   case 0x03:
     err = pair_verify_m3();
     if (err <= 0) {
       std::cerr << "Error during verification of M3 message" << std::endl;
-      return -1;
+      break;
     }
 
     err = pair_verify_m4();
 
+    verified_ = true;
     break;
   }
 
   if (err <= 0) {
     std::cout << "Encountered Error, sending error message" << std::endl;
     rtsp_post_pair_error();
-    return -1;
+    return 0;
   }
 
   body = tlv8Encoder_->get_body();
@@ -503,7 +501,7 @@ int RTSPParser::rtsp_post_pair_verify() {
 
   std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
 
-  std::vector<uint8_t> fullMessage(header, header + header_len);
+  u8Vec_t fullMessage(header, header + header_len);
   fullMessage.insert(fullMessage.end(), body.begin(), body.end());
 
   err = send(clientID_, fullMessage.data(), fullMessage.size(), 0);
@@ -526,12 +524,13 @@ int RTSPParser::pair_verify_m2() {
 
   cryptoHandler_->set_encrypt_key(cryptoHandler_->get_shared_key());
 
-  cryptoHandler_->hkdf_sha512("Pair-Verify-Encrypt-Salt",
-                              "Pair-Verify-Encrypt-Info");
+  auto hkdfKey =
+      hkdf_sha512("Pair-Verify-Encrypt-Salt", "Pair-Verify-Encrypt-Info",
+                  cryptoHandler_->get_shared_key());
 
-  cryptoHandler_->set_encrypt_key(cryptoHandler_->get_hkdf_key());
+  cryptoHandler_->set_encrypt_key(hkdfKey);
 
-  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> subMessageMap = {
+  std::vector<std::pair<TLV8Type_t, u8Vec_t>> subMessageMap = {
       {TLV8_IDENTIFIER, cryptoHandler_->get_identifier()},
       {TLV8_SIGNATURE, cryptoHandler_->get_signature()},
   };
@@ -544,7 +543,7 @@ int RTSPParser::pair_verify_m2() {
   auto encryptedSubMessage =
       cryptoHandler_->chacha_encrypt(tlv8Encoder_->get_body());
 
-  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
+  std::vector<std::pair<TLV8Type_t, u8Vec_t>> messageMap = {
       {TLV8_STATE, {0x02}},
       {TLV8_PK, cryptoHandler_->get_ephemeral_key()},
       {TLV8_ENCRYPTED_DATA, encryptedSubMessage},
@@ -558,10 +557,11 @@ int RTSPParser::pair_verify_m2() {
 
 int RTSPParser::pair_verify_m3() {
   int err = cryptoHandler_->set_nonce("PV-Msg03");
-  cryptoHandler_->set_cipher_tag(
-      tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
+  auto [cipher, tag] =
+      get_cipher_tag(tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
 
-  auto decryptBlob = cryptoHandler_->chacha_decrypt();
+  auto decryptBlob =
+      cryptoHandler_->chacha_decrypt(cipher, cryptoHandler_->get_nonce(), tag);
   tlv8Decoder_->set_sub_message(decryptBlob);
   tlv8Decoder_->decode_sub();
 
@@ -574,7 +574,7 @@ int RTSPParser::pair_verify_m3() {
     return -1;
   }
 
-  std::vector<uint8_t> messageInfo;
+  u8Vec_t messageInfo;
   auto clientEph = cryptoHandler_->get_client_ephemeral_key();
   auto id = tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER);
   auto serverEph = cryptoHandler_->get_ephemeral_key();
@@ -595,8 +595,7 @@ int RTSPParser::pair_verify_m3() {
 }
 
 int RTSPParser::pair_verify_m4() {
-
-  std::vector<std::pair<TLV8Type_t, std::vector<uint8_t>>> messageMap = {
+  std::vector<std::pair<TLV8Type_t, u8Vec_t>> messageMap = {
       {TLV8_STATE, {0x04}}};
 
   tlv8Encoder_->set_map(messageMap);
@@ -604,6 +603,8 @@ int RTSPParser::pair_verify_m4() {
 
   return 1;
 }
+
+int RTSPParser::rtsp_decrypt_message() { return 1; }
 
 int RTSPParser::rtsp_post_pair_error() {
   uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2
@@ -688,6 +689,10 @@ int RTSPParser::get_body() {
     bodyRead += receivedSize;
   }
   return 1;
+}
+
+u8Vec_t RTSPParser::get_shared_key() {
+  return cryptoHandler_->get_shared_key();
 }
 
 std::shared_ptr<RTSPParser>

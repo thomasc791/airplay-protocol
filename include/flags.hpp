@@ -142,8 +142,8 @@ public:
   void clearAll() { mask_ = 0; }
   bool has(T flag) { return (mask_ & static_cast<uint64_t>(flag)) != 0; }
 
-  uint64_t getRaw() const { return mask_; }
-  std::string getHex() const {
+  uint64_t get_raw() const { return mask_; }
+  std::string get_hex() const {
     std::stringstream s;
     if ((mask_ >> 32) == 0) {
       s << "0x" << std::hex << mask_;

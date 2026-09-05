@@ -6,8 +6,10 @@
 #include "plist.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
+#include <atomic>
 
 #include <memory>
+#include <vector>
 
 #define MAX_MSG_BUFFER_SIZE 2048
 
@@ -22,8 +24,11 @@ public:
   int set_client(int currentClient);
   int set_msg(char *tcpMessage, int len);
   int parse_message();
+  bool is_verified() { return verified_; };
+  u8Vec_t get_shared_key();
 
 private:
+  std::atomic<bool> verified_{false};
   int clientID_, messageLength_, contentLength_, CSeq_;
   char *body_, *bodyBuffer_, *msg_;
   std::string title_, msgHeader_, macAddress_, pi_;
@@ -61,7 +66,9 @@ private:
   int pair_setup_m5();
   int pair_setup_m6();
 
-  std::vector<uint8_t> create_plist();
+  int rtsp_decrypt_message();
+
+  u8Vec_t create_plist();
 };
 
 std::shared_ptr<RTSPParser>
