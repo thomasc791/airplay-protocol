@@ -20,16 +20,17 @@
 
 RTSPParser::RTSPParser(int client_fd, std::string macAddress, std::string pi,
                        std::shared_ptr<FeatureFlags> featureFlags,
-                       std::shared_ptr<StatusFlags> statusFlags)
+                       std::shared_ptr<StatusFlags> statusFlags,
+                       std::shared_ptr<PairingManager> pairingManager)
     : clientID_(client_fd), contentLength_(), CSeq_(), msg_{},
       macAddress_(macAddress), pi_(pi), plistWriter_(), header{},
-      featureFlags_(featureFlags), statusFlags_(statusFlags) {
+      featureFlags_(featureFlags), statusFlags_(statusFlags),
+      pairingManager_(pairingManager) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
   tlv8Decoder_ = create_tlv8_decoder();
   tlv8Encoder_ = create_tlv8_encoder();
   cryptoHandler_ = create_crypto_handler();
-  pairingManager_ = create_pairing_manager();
   srpHandler_ = create_srp_handler();
 }
 
@@ -107,9 +108,9 @@ std::vector<uint8_t> RTSPParser::create_plist() {
       {"features", V::uint(featureFlags_->getRaw())},
       {"model", V::string("AudioAccessory6,1")},
       {"gcgl", V::string("0")},
-      // {"pk", V::string(crypto_handler_->get_public_hex_string())},
       {"nameIsFactoryDefault", V::boolean(false)},
       {"pi", V::string(pi_)},
+      {"pk", V::data(cryptoHandler_->get_public_key())},
       {"protocolVersion", V::string("1.1")},
       {"password", V::boolean(true)},
       {"sourceVersion", V::string("366.0")},
@@ -258,7 +259,7 @@ int RTSPParser::rtsp_post_pair_setup() {
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
                             "Server: AirTunes/366.0\r\n"
-                            "Content-Type: application/pairing+tlv8\r\n"
+                            "Content-Type: application/octet-stream\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
                             CSeq_, (int)body.size());
@@ -379,10 +380,10 @@ int RTSPParser::pair_setup_m5() {
     return -1;
   }
 
-  pairingManager_->add_paired_device(
-      {tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER),
-       {tlv8Decoder_->read_sub_message(TLV8_PK),
-        tlv8Decoder_->read_sub_message(TLV8_SIGNATURE)}});
+  pairingManager_->add_paired_device({
+      tlv8Decoder_->read_sub_message(TLV8_IDENTIFIER),
+      tlv8Decoder_->read_sub_message(TLV8_PK),
+  });
 
   return err;
 }
@@ -450,6 +451,20 @@ int RTSPParser::rtsp_post_pair_verify() {
     // rtsp_post_pair_error();
     err = pair_verify_m2();
 
+    if (cryptoHandler_->pub_ == cryptoHandler_->firstPub_ &&
+        cryptoHandler_->priv_ == cryptoHandler_->firstPriv_) {
+      std::cout << "First generated keys and second generated keys are the same"
+                << std::endl;
+    } else {
+      std::cout
+          << "First generated keys and second generated keys are not the same"
+          << std::endl;
+    }
+
+    if (err <= 0) {
+      std::cout << "Error generating Pair-Verify M2" << std::endl;
+      return -1;
+    }
     break;
   case 0x03:
     err = pair_verify_m3();
@@ -475,8 +490,7 @@ int RTSPParser::rtsp_post_pair_verify() {
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
                             "Server: AirTunes/366.0\r\n"
-                            "Connection: keep-alive\r\n"
-                            "Content-Type: application/pairing+tlv8\r\n"
+                            "Content-Type: application/octet-stream\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
                             CSeq_, (int)body.size());
@@ -598,7 +612,7 @@ int RTSPParser::rtsp_post_pair_error() {
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
-                            "Content-Type: application/pairing+tlv8\r\n"
+                            "Content-Type: application/octet-stream\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
                             CSeq_, (int)sizeof(tlv));
@@ -676,10 +690,11 @@ int RTSPParser::get_body() {
   return 1;
 }
 
-std::unique_ptr<RTSPParser>
+std::shared_ptr<RTSPParser>
 create_rtsp_parser(int clientID, std::string macAddress, std::string pi,
                    std::shared_ptr<FeatureFlags> featureFlags,
-                   std::shared_ptr<StatusFlags> statusFlags) {
-  return std::make_unique<RTSPParser>(clientID, macAddress, pi, featureFlags,
-                                      statusFlags);
+                   std::shared_ptr<StatusFlags> statusFlags,
+                   std::shared_ptr<PairingManager> pairingManager) {
+  return std::make_shared<RTSPParser>(clientID, macAddress, pi, featureFlags,
+                                      statusFlags, pairingManager);
 }

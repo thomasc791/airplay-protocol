@@ -133,6 +133,7 @@ int CryptoHandler::store_retrieve_pkey() {
   }
 
   if (!fs::exists(pubPath)) {
+    std::cout << "Generating new long-term key pair" << std::endl;
     generate_identity_keypair();
     get_raw_keypair(pkey_.get());
 
@@ -154,6 +155,7 @@ int CryptoHandler::store_retrieve_pkey() {
     }
 
     publicKeyFile.close();
+    privateKeyFile.close();
 
     return 1;
   } else {
@@ -164,6 +166,8 @@ int CryptoHandler::store_retrieve_pkey() {
 
     priv_ = hex_to_chars(priv_key_hex_);
     pub_ = hex_to_chars(pub_key_hex_);
+    firstPriv_ = hex_to_chars(priv_key_hex_);
+    firstPub_ = hex_to_chars(pub_key_hex_);
 
     EVP_PKEY *pkeyRaw = EVP_PKEY_new_raw_private_key(
         EVP_PKEY_ED25519, nullptr, priv_.data(), priv_.size());
@@ -302,7 +306,12 @@ std::string CryptoHandler::get_public_hex_string() const {
 std::vector<uint8_t> CryptoHandler::get_accessory_x() const {
   return accessoryX_;
 }
-std::vector<uint8_t> CryptoHandler::get_public_key() const { return pub_; }
+std::vector<uint8_t> CryptoHandler::get_public_key() const {
+  if (pub_.size() != 32)
+    std::cerr << "Public key is not 32 bytes long" << std::endl;
+
+  return pub_;
+}
 std::vector<uint8_t> CryptoHandler::get_hkdf_key() const { return hkdfKey_; }
 std::vector<uint8_t> CryptoHandler::get_shared_key() const {
   return sharedKey_;

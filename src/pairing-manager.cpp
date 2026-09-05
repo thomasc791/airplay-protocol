@@ -27,6 +27,33 @@ PairingManager::PairingManager() : pairingMap_({}) {
 
       return;
     }
+  } else {
+    fs::path filePath = keyDir / "identity";
+
+    fs::path pubPath = filePath;
+    fs::path privPath = filePath;
+    pubPath += ".pub";
+    privPath += ".priv";
+
+    if (!fs::exists(keyDir)) {
+      if (!fs::create_directory(keyDir)) {
+        std::cerr << "Failed to create directory at " << keyDir << std::endl;
+        return;
+      }
+    }
+
+    std::string pubKeyHex, privKeyHex;
+
+    std::ifstream publicKeyFile(pubPath);
+    std::ifstream privateKeyFile(privPath);
+    std::getline(publicKeyFile, pubKeyHex);
+    std::getline(privateKeyFile, privKeyHex);
+
+    pub_ = hex_to_chars(pubKeyHex);
+    priv_ = hex_to_chars(privKeyHex);
+
+    publicKeyFile.close();
+    privateKeyFile.close();
   }
 
   std::ifstream fin(filePath_);
@@ -53,8 +80,7 @@ PairingManager::~PairingManager() {
       if (k.size() <= 0)
         break;
       fout << chars_to_hex(k);
-      for (auto vv : v)
-        fout << "," << chars_to_hex(vv);
+      fout << "," << chars_to_hex(v);
       fout << std::endl;
     }
 
@@ -64,8 +90,7 @@ PairingManager::~PairingManager() {
 }
 
 void PairingManager::add_paired_device(
-    std::pair<std::vector<uint8_t>, std::array<std::vector<uint8_t>, 2>>
-        entry) {
+    std::pair<std::vector<uint8_t>, std::vector<uint8_t>> entry) {
   pairingMap_[entry.first] = entry.second;
 }
 
@@ -77,16 +102,15 @@ PairingManager::get_device_key(std::vector<uint8_t> identifier) {
   }
 
   if (pairingMap_.count(identifier))
-    return {true, pairingMap_[identifier][0]};
+    return {true, pairingMap_[identifier]};
 
   return {false, std::vector<uint8_t>()};
 }
 
-std::pair<std::vector<uint8_t>, std::array<std::vector<uint8_t>, 2>>
+std::pair<std::vector<uint8_t>, std::vector<uint8_t>>
 PairingManager::read_pair(std::stringstream &pair) {
   std::string identifier;
   std::string publicKey;
-  std::string signature;
   std::string kv;
   size_t i = 0;
   while (std::getline(pair, kv, ',')) {
@@ -97,20 +121,18 @@ PairingManager::read_pair(std::stringstream &pair) {
     case 1:
       publicKey = kv;
       break;
-    case 2:
-      signature = kv;
-      break;
     }
     i++;
   }
 
   std::vector<uint8_t> identifierVec = hex_to_chars(identifier);
   std::vector<uint8_t> pkVec = hex_to_chars(publicKey);
-  std::vector<uint8_t> signatureVec = hex_to_chars(signature);
 
-  return {identifierVec, {pkVec, signatureVec}};
+  return {identifierVec, pkVec};
 }
 
-std::unique_ptr<PairingManager> create_pairing_manager() {
-  return std::make_unique<PairingManager>();
+std::vector<uint8_t> PairingManager::get_public_key() { return pub_; }
+
+std::shared_ptr<PairingManager> create_pairing_manager() {
+  return std::make_shared<PairingManager>();
 }

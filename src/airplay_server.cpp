@@ -1,6 +1,6 @@
 #include "airplay_server.hpp"
-#include "crypto.hpp"
 #include "flags.hpp"
+#include "pairing-manager.hpp"
 #include "rtsp.hpp"
 #include "utils.hpp"
 
@@ -19,7 +19,9 @@ AirPlayServer::AirPlayServer(const std::string &device_name, uint16_t port)
     : port_(port), deviceName_(device_name) {
 
   deviceID_ = get_system_mac_address();
-  pi_ = "767e31b2-9074-4be0-a3ad-4c0b491877ca";
+  pairingManager_ = create_pairing_manager();
+
+  pi_ = "202e8e4d-fd93-45da-af09-26850b417ad6";
 }
 
 AirPlayServer::~AirPlayServer() { stop(); }
@@ -55,7 +57,8 @@ int AirPlayServer::publish_airplay_service() {
       {"gid", pi_},
       {"gcgl", "0"},
       {"model", "AudioAccessory6,1"},
-      // {"igl", "0"},
+      {"pi", pi_},
+      {"pk", chars_to_hex(pairingManager_->get_public_key())},
       {"protovers", "1.1"},
       {"rsf", "0x0"},
       {"serialNumber", deviceID_},
@@ -77,6 +80,7 @@ int AirPlayServer::publish_raop_service() {
       // {"vn", "65537"},
       // {"srcvers", "366.0"},
       {"pi", pi_},
+      {"pk", chars_to_hex(pairingManager_->get_public_key())},
       {"pw", "true"},
       // {"da", "true"},
       {"ft", featureFlags_->getHex()},
@@ -158,8 +162,8 @@ void AirPlayServer::handle_client(int clientID) {
   std::cout << "Created new RTSP handler for client with ID: " << clientID
             << std::endl
             << "Starting new RTSP parser..." << std::endl;
-  auto rtspParser =
-      create_rtsp_parser(clientID, deviceID_, pi_, featureFlags_, statusFlags_);
+  auto rtspParser = create_rtsp_parser(clientID, deviceID_, pi_, featureFlags_,
+                                       statusFlags_, pairingManager_);
   char buffer[2048] = {0};
   while (running_) {
     memset(buffer, 0, sizeof(buffer));
@@ -213,5 +217,5 @@ std::string get_system_mac_address() {
 
   freeifaddrs(ifaddr);
 
-  return mac_str.empty() ? "00:11:22:33:44:55" : mac_str;
+  return mac_str.empty() ? "00:11:22:33:44:55" : "5C:5F:67:60:A3:16";
 }

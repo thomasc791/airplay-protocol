@@ -13,9 +13,10 @@
 
 class RTSPParser {
 public:
-  RTSPParser(int clientID, std::string macAddress, std::string pi,
+  RTSPParser(int client_fd, std::string macAddress, std::string pi,
              std::shared_ptr<FeatureFlags> featureFlags,
-             std::shared_ptr<StatusFlags> statusFlags);
+             std::shared_ptr<StatusFlags> statusFlags,
+             std::shared_ptr<PairingManager> pairingManager);
   ~RTSPParser();
 
   int set_client(int currentClient);
@@ -35,7 +36,7 @@ private:
   std::shared_ptr<StatusFlags> statusFlags_;
   std::unique_ptr<TLV8Decoder> tlv8Decoder_;
   std::unique_ptr<TLV8Encoder> tlv8Encoder_;
-  std::unique_ptr<PairingManager> pairingManager_;
+  std::shared_ptr<PairingManager> pairingManager_;
 
   int get_content_length();
   int get_cseq();
@@ -63,7 +64,8 @@ private:
   std::vector<uint8_t> create_plist();
 };
 
-std::unique_ptr<RTSPParser>
+std::shared_ptr<RTSPParser>
 create_rtsp_parser(int clientID, std::string macAddress, std::string pi,
                    std::shared_ptr<FeatureFlags> featureFlags,
-                   std::shared_ptr<StatusFlags> statusFlags);
+                   std::shared_ptr<StatusFlags> statusFlags,
+                   std::shared_ptr<PairingManager> pairingManager);

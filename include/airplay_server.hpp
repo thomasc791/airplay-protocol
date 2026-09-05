@@ -2,11 +2,13 @@
 
 #include "flags.hpp"
 #include "hal/mdns_service.hpp"
+#include "pairing-manager.hpp"
 
 #include <atomic>
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 class AirPlayServer {
 private:
@@ -18,6 +20,7 @@ private:
   std::unique_ptr<IMDnsService> mdns_;
   std::shared_ptr<FeatureFlags> featureFlags_;
   std::shared_ptr<StatusFlags> statusFlags_;
+  std::shared_ptr<PairingManager> pairingManager_;
 
   void run();
   int create_airplay_service();

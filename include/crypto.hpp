@@ -61,9 +61,11 @@ public:
                              std::vector<uint8_t> ltpk,
                              std::vector<uint8_t> signature);
 
+  std::vector<uint8_t> priv_, pub_;
+  std::vector<uint8_t> firstPriv_, firstPub_;
+
 private:
   std::vector<uint8_t> identifier_, signature_, accessoryX_;
-  std::vector<uint8_t> priv_, pub_;
   std::vector<uint8_t> ephemeralPub_, clientEphemeralPub_;
   std::vector<uint8_t> sharedKey_, encryptKey_, hkdfKey_, nonce_, cipherText_,
       authTag_;
