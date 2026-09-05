@@ -19,19 +19,18 @@
 #include <vector>
 
 RTSPParser::RTSPParser(int client_fd, std::string macAddress, std::string pi,
-                       std::shared_ptr<CryptoHandler> cryptoHandler,
                        std::shared_ptr<FeatureFlags> featureFlags,
                        std::shared_ptr<StatusFlags> statusFlags)
     : clientID_(client_fd), contentLength_(), CSeq_(), msg_{},
       macAddress_(macAddress), pi_(pi), plistWriter_(), header{},
-      cryptoHandler_(cryptoHandler), featureFlags_(featureFlags),
-      statusFlags_(statusFlags) {
+      featureFlags_(featureFlags), statusFlags_(statusFlags) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
   tlv8Decoder_ = create_tlv8_decoder();
   tlv8Encoder_ = create_tlv8_encoder();
-  srpHandler_ = create_srp_handler();
+  cryptoHandler_ = create_crypto_handler();
   pairingManager_ = create_pairing_manager();
+  srpHandler_ = create_srp_handler();
 }
 
 RTSPParser::~RTSPParser() {}
@@ -476,7 +475,8 @@ int RTSPParser::rtsp_post_pair_verify() {
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
                             "Server: AirTunes/366.0\r\n"
-                            "Content-Type: application/octet-stream\r\n"
+                            "Connection: keep-alive\r\n"
+                            "Content-Type: application/pairing+tlv8\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
                             CSeq_, (int)body.size());
@@ -489,8 +489,10 @@ int RTSPParser::rtsp_post_pair_verify() {
 
   std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
 
-  err = send(clientID_, header, header_len, 0);
-  err = send(clientID_, body.data(), body.size(), 0);
+  std::vector<uint8_t> fullMessage(header, header + header_len);
+  fullMessage.insert(fullMessage.end(), body.begin(), body.end());
+
+  err = send(clientID_, fullMessage.data(), fullMessage.size(), 0);
 
   if (err <= 0) {
     std::cerr << "Could not send message." << std::endl;
@@ -676,9 +678,8 @@ int RTSPParser::get_body() {
 
 std::unique_ptr<RTSPParser>
 create_rtsp_parser(int clientID, std::string macAddress, std::string pi,
-                   std::shared_ptr<CryptoHandler> cryptoHandler,
                    std::shared_ptr<FeatureFlags> featureFlags,
                    std::shared_ptr<StatusFlags> statusFlags) {
-  return std::make_unique<RTSPParser>(clientID, macAddress, pi, cryptoHandler,
-                                      featureFlags, statusFlags);
+  return std::make_unique<RTSPParser>(clientID, macAddress, pi, featureFlags,
+                                      statusFlags);
 }

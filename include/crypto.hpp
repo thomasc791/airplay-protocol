@@ -81,4 +81,4 @@ private:
   size_t cipherLen_;
 };
 
-std::shared_ptr<CryptoHandler> create_crypto_handler();
+std::unique_ptr<CryptoHandler> create_crypto_handler();

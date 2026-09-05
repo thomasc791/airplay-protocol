@@ -26,7 +26,6 @@ AirPlayServer::~AirPlayServer() { stop(); }
 
 bool AirPlayServer::start() {
   mdns_ = create_mdns_service();
-  cryptoHandler_ = create_crypto_handler();
   featureFlags_ = create_feature_flags();
   statusFlags_ = create_status_flags();
 
@@ -56,7 +55,6 @@ int AirPlayServer::publish_airplay_service() {
       {"gid", pi_},
       {"gcgl", "0"},
       {"model", "AudioAccessory6,1"},
-      // {"pk", crypto_handler_->get_public_hex_string()},
       // {"igl", "0"},
       {"protovers", "1.1"},
       {"rsf", "0x0"},
@@ -160,8 +158,8 @@ void AirPlayServer::handle_client(int clientID) {
   std::cout << "Created new RTSP handler for client with ID: " << clientID
             << std::endl
             << "Starting new RTSP parser..." << std::endl;
-  auto rtspParser = create_rtsp_parser(clientID, deviceID_, pi_, cryptoHandler_,
-                                       featureFlags_, statusFlags_);
+  auto rtspParser =
+      create_rtsp_parser(clientID, deviceID_, pi_, featureFlags_, statusFlags_);
   char buffer[2048] = {0};
   while (running_) {
     memset(buffer, 0, sizeof(buffer));

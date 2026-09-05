@@ -14,7 +14,6 @@
 class RTSPParser {
 public:
   RTSPParser(int clientID, std::string macAddress, std::string pi,
-             std::shared_ptr<CryptoHandler> cryptoHandler,
              std::shared_ptr<FeatureFlags> featureFlags,
              std::shared_ptr<StatusFlags> statusFlags);
   ~RTSPParser();
@@ -31,7 +30,7 @@ private:
   char header[256];
 
   std::unique_ptr<SRPHandler> srpHandler_;
-  std::shared_ptr<CryptoHandler> cryptoHandler_;
+  std::unique_ptr<CryptoHandler> cryptoHandler_;
   std::shared_ptr<FeatureFlags> featureFlags_;
   std::shared_ptr<StatusFlags> statusFlags_;
   std::unique_ptr<TLV8Decoder> tlv8Decoder_;
@@ -66,6 +65,5 @@ private:
 
 std::unique_ptr<RTSPParser>
 create_rtsp_parser(int clientID, std::string macAddress, std::string pi,
-                   std::shared_ptr<CryptoHandler> cryptoHandler,
                    std::shared_ptr<FeatureFlags> featureFlags,
                    std::shared_ptr<StatusFlags> statusFlags);

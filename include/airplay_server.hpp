@@ -1,6 +1,5 @@
 #pragma once
 
-#include "crypto.hpp"
 #include "flags.hpp"
 #include "hal/mdns_service.hpp"
 
@@ -17,7 +16,6 @@ private:
   std::atomic<bool> running_{false};
   std::thread server_thread_;
   std::unique_ptr<IMDnsService> mdns_;
-  std::shared_ptr<CryptoHandler> cryptoHandler_;
   std::shared_ptr<FeatureFlags> featureFlags_;
   std::shared_ptr<StatusFlags> statusFlags_;
 

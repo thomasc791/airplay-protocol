@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <openssl/evp.h>
 #include <openssl/kdf.h>
 #include <stdexcept>
@@ -323,10 +324,6 @@ std::vector<uint8_t> CryptoHandler::get_client_ephemeral_key() const {
   return clientEphemeralPub_;
 }
 
-std::shared_ptr<CryptoHandler> create_crypto_handler() {
-  return std::make_shared<CryptoHandler>();
-}
-
 void CryptoHandler::set_encrypt_key(std::vector<uint8_t> ek) {
   encryptKey_ = ek;
 }
@@ -376,4 +373,8 @@ int CryptoHandler::signature_verification(std::vector<uint8_t> messageInfo,
   EVP_MD_CTX_free(mdctx);
 
   return result;
+}
+
+std::unique_ptr<CryptoHandler> create_crypto_handler() {
+  return std::make_unique<CryptoHandler>();
 }
