@@ -27,7 +27,6 @@ CryptoHandler::CryptoHandler()
   identifier_ = u8Vec_t(mac.begin(), mac.end());
 
   store_retrieve_pkey();
-  generate_ephemeral_key();
 }
 CryptoHandler::~CryptoHandler() {}
 

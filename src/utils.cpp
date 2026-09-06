@@ -1,5 +1,6 @@
 #include "utils.hpp"
 
+#include <codecvt>
 #include <ifaddrs.h>
 #include <iomanip>
 #include <net/if.h>

@@ -26,8 +26,6 @@ u8Vec_t CipherTransporter::get_read_nonce() {
     nonce[4 + i] = readCounter_ >> (i * 8);
 
   readCounter_++;
-
-  std::cout << chars_to_hex(nonce) << std::endl;
   return nonce;
 }
 
@@ -44,7 +42,6 @@ u8Vec_t CipherTransporter::get_write_nonce() {
 u8Vec_t CipherTransporter::cipher_length() {
   cipherLength_ = body_[1] << 8;
   cipherLength_ |= body_[0];
-  std::cout << "Length: " << cipherLength_ << std::endl;
 
   return u8Vec_t(body_.begin(), body_.begin() + 2);
 }
@@ -58,31 +55,10 @@ int CipherTransporter::decrypt(u8Vec_t cipher, u8Vec_t aad, u8Vec_t nonce,
 
   err = EVP_DecryptInit_ex(cipherCtx, EVP_chacha20_poly1305(), nullptr,
                            decryptionKey_.data(), nonce.data());
-  if (err <= 0) {
-    std::cerr << "Error setting initialising decryption" << std::endl;
-    EVP_CIPHER_CTX_free(cipherCtx);
-    return err;
-  }
   err = EVP_DecryptUpdate(cipherCtx, nullptr, &outlen, aad.data(), aad.size());
-  if (err <= 0) {
-    std::cerr << "Error setting updating decryption aad" << std::endl;
-    EVP_CIPHER_CTX_free(cipherCtx);
-    return err;
-  }
   err = EVP_DecryptUpdate(cipherCtx, plaintext.data(), &outlen, cipher.data(),
                           cipher.size());
-  if (err <= 0) {
-    std::cerr << "Error setting updating decryption" << std::endl;
-    EVP_CIPHER_CTX_free(cipherCtx);
-    return err;
-  }
   err = EVP_CIPHER_CTX_ctrl(cipherCtx, EVP_CTRL_AEAD_SET_TAG, 16, tag.data());
-  if (err <= 0) {
-    std::cerr << "Error setting tag" << std::endl;
-    EVP_CIPHER_CTX_free(cipherCtx);
-    return err;
-  }
-
   err = EVP_DecryptFinal_ex(cipherCtx, plaintext.data() + outlen, &outlen);
 
   if (err <= 0) {

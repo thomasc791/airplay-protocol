@@ -35,6 +35,7 @@ public:
   void set_client_ephemeral_pub(u8Vec_t epk);
 
   void set_encrypt_key(u8Vec_t ek);
+  int generate_ephemeral_key();
 
   u8Vec_t chacha_decrypt(u8Vec_t cipher, u8Vec_t nonce, u8Vec_t tag);
   u8Vec_t chacha_encrypt(u8Vec_t payload);
@@ -71,7 +72,6 @@ private:
   std::string priv_key_hex_, pub_key_hex_;
 
   int generate_identity_keypair();
-  int generate_ephemeral_key();
   int get_raw_keypair(EVP_PKEY *pkey);
 
   int store_retrieve_pkey();

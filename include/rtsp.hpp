@@ -1,6 +1,7 @@
 #pragma once
 
 #include "crypto.hpp"
+#include "fairplay.hpp"
 #include "flags.hpp"
 #include "pairing-manager.hpp"
 #include "plist.hpp"
@@ -9,7 +10,6 @@
 #include <atomic>
 
 #include <memory>
-#include <vector>
 
 #define MAX_MSG_BUFFER_SIZE 2048
 
@@ -42,6 +42,7 @@ private:
   std::unique_ptr<TLV8Decoder> tlv8Decoder_;
   std::unique_ptr<TLV8Encoder> tlv8Encoder_;
   std::shared_ptr<PairingManager> pairingManager_;
+  std::unique_ptr<FairPlayWrapper> fairPlayWrapper_;
 
   int get_content_length();
   int get_cseq();
@@ -50,7 +51,6 @@ private:
   int get_body();
   int rtsp_get_options();
   int rtsp_post_commands();
-  int rtsp_post_fp_setup();
   int rtsp_get_info();
 
   int rtsp_post_pair_verify();
@@ -66,7 +66,8 @@ private:
   int pair_setup_m5();
   int pair_setup_m6();
 
-  int rtsp_decrypt_message();
+  int rtsp_post_fp_setup();
+  int fp3_setup();
 
   u8Vec_t create_plist();
 };

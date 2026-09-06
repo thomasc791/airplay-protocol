@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(airplay_receiver CXX C)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Debug)
 
@@ -16,6 +16,7 @@ pkg_check_modules(AVAHI REQUIRED avahi-client)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/playfair
     ${OPENSSL_INCLUDE_DIR}
     ${AVAHI_INCLUDE_DIRS}
 )

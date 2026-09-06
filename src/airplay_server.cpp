@@ -195,8 +195,10 @@ void AirPlayServer::handle_client(int clientID) {
 
       auto decryptedChars = cipherTransporter->get_decrypted();
       std::string decrypted(decryptedChars.begin(), decryptedChars.end());
+      char *dc = (char *)decrypted.c_str();
 
-      rtspParser->set_msg(decrypted.data(), decrypted.size());
+      rtspParser->set_msg(dc, decrypted.size());
+      rtspParser->parse_message();
     }
   }
   close(clientID);

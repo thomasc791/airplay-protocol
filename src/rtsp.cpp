@@ -7,6 +7,8 @@
 #include "srp.hpp"
 #include "tlv8.hpp"
 #include "utils.hpp"
+
+#include <codecvt>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -82,8 +84,6 @@ int RTSPParser::parse_message() {
       printf("%02x ", (unsigned char)msg_[i]);
     }
     printf("\n");
-
-    rtsp_decrypt_message();
   }
   printf("\n");
 
@@ -171,20 +171,6 @@ int RTSPParser::rtsp_post_commands() {
   //   printf("%02x", empty_bplist[i]);
   // printf("\n");
 
-  return 1;
-}
-
-int RTSPParser::rtsp_post_fp_setup() {
-  int header_len = snprintf(header, sizeof(header),
-                            "RTSP/1.0 200 OK\r\n"
-                            "CSeq: %d\r\n"
-                            "Public: OPTIONS, GET, POST, SETUP, ANNOUNCE, "
-                            "RECORD, PAUSE, FLUSH, TEARDOWN\r\n"
-                            "Server: AirTunes/366.0\r\n"
-                            "\r\n",
-                            CSeq_);
-
-  send(clientID_, header, header_len, 0);
   return 1;
 }
 
@@ -515,6 +501,7 @@ int RTSPParser::rtsp_post_pair_verify() {
 };
 
 int RTSPParser::pair_verify_m2() {
+  cryptoHandler_->generate_ephemeral_key();
   cryptoHandler_->set_client_ephemeral_pub(tlv8Decoder_->read_message(TLV8_PK));
   cryptoHandler_->calculate_shared_key();
 
@@ -604,7 +591,54 @@ int RTSPParser::pair_verify_m4() {
   return 1;
 }
 
-int RTSPParser::rtsp_decrypt_message() { return 1; }
+int RTSPParser::rtsp_post_fp_setup() {
+  if (!fairPlayWrapper_)
+    fairPlayWrapper_ = create_fp_wrapper();
+
+  u8Vec_t body;
+  std::string fplyString(reinterpret_cast<const char *>(body_),
+                         reinterpret_cast<const char *>(body_) + 4);
+
+  u8Vec_t vecBody(reinterpret_cast<const char *>(body_) + 4,
+                  reinterpret_cast<const char *>(body_) + contentLength_);
+
+  std::cout << fplyString << std::endl;
+  std::cout << chars_to_hex(vecBody) << std::endl;
+
+  switch (vecBody[0]) {
+  case (0x03):
+    body.insert(body.end(), fplyString.begin(), fplyString.end());
+    body.insert(body.end(), {0x03, 0x01, 0x03, 0x00});
+    auto fpCertification = fairPlayWrapper_->get_fp_cert();
+    auto length = lil_endian((uint32_t)fpCertification.size());
+    body.insert(body.end(), length.begin(), length.end());
+    body.insert(body.end(), fpCertification.begin(), fpCertification.end());
+    fp3_setup();
+    break;
+  }
+
+  int header_len = snprintf(header, sizeof(header),
+                            "RTSP/1.0 200 OK\r\n"
+                            "CSeq: %d\r\n"
+                            "Server: AirTunes/366.0\r\n"
+                            "Content-Type: application/octet-stream\r\n"
+                            "Content-Length: %d\r\n"
+                            "\r\n",
+                            CSeq_, int(body.size()));
+
+  send(clientID_, header, header_len, 0);
+  send(clientID_, body.data(), body.size(), 0);
+
+  std::cout << header << std::endl;
+  std::cout << chars_to_hex(body) << std::endl;
+
+  return 1;
+}
+
+int RTSPParser::fp3_setup() {
+  std::cout << chars_to_hex(fairPlayWrapper_->get_fp_cert()) << std::endl;
+  return 1;
+}
 
 int RTSPParser::rtsp_post_pair_error() {
   uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2
