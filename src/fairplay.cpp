@@ -2,7 +2,7 @@
 #include "crypto.hpp"
 
 extern "C" {
-#include "playfair/playfair.h"
+#include "playfair.h"
 
 extern const unsigned char default_sap[276];
 }

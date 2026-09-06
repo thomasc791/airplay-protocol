@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(airplay_receiver CXX C)
+project(AirPlayReceiver CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,10 +16,11 @@ pkg_check_modules(AVAHI REQUIRED avahi-client)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/playfair
     ${OPENSSL_INCLUDE_DIR}
     ${AVAHI_INCLUDE_DIRS}
 )
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/playfair)
 
 file(GLOB_RECURSE SOURCES 
     "src/*.cpp"
@@ -33,6 +34,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenSSL::Crypto
     OpenSSL::SSL
     ${AVAHI_LIBRARIES}
+    playfair
 )
 
 message(STATUS "Configured ${PROJECT_NAME} for Linux / Raspberry Pi target")
