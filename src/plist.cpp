@@ -1,10 +1,10 @@
 #include "plist.hpp"
 
-using plw = PlistWriter;
+// using PlistWriter = PlistWriter;
 using pwVal = PlistWriter::Value;
 
-plw::PlistWriter() = default;
-plw::~PlistWriter() = default;
+PlistWriter::PlistWriter() = default;
+PlistWriter::~PlistWriter() = default;
 
 pwVal pwVal::boolean(bool v) {
   Value val;
@@ -43,7 +43,7 @@ pwVal pwVal::dict(Dict v) {
   return val;
 }
 
-std::vector<uint8_t> plw::serialize(const pwVal &root) {
+std::vector<uint8_t> PlistWriter::serialize(const pwVal &root) {
   objects.clear();
   offsets.clear();
   out.clear();
@@ -77,7 +77,7 @@ std::vector<uint8_t> plw::serialize(const pwVal &root) {
   return out;
 }
 
-size_t plw::flattenValue(const pwVal &val) {
+size_t PlistWriter::flattenValue(const pwVal &val) {
   size_t myIdx = objects.size();
   objects.push_back({val, {}}); // Insert placeholder
 
@@ -86,10 +86,10 @@ size_t plw::flattenValue(const pwVal &val) {
   if (val.type == pwVal::Type::Dict) {
     // bplist requires ALL keys first, then ALL values
     for (const auto &pair : val.dictVal) {
-      refs.push_back(flattenValue(pwVal::string(pair.first)));
+      refs.push_back(flattenValue(pwVal::string(pair.key)));
     }
     for (const auto &pair : val.dictVal) {
-      refs.push_back(flattenValue(pair.second));
+      refs.push_back(flattenValue(pair.value));
     }
   } else if (val.type == pwVal::Type::Array) {
     for (const auto &e : val.arrayVal) {
@@ -102,7 +102,7 @@ size_t plw::flattenValue(const pwVal &val) {
   return myIdx;
 }
 
-void plw::writeObject(const FlatNode &node, uint8_t objectRefSize) {
+void PlistWriter::writeObject(const FlatNode &node, uint8_t objectRefSize) {
   const Value &val = node.val;
   switch (val.type) {
   case Value::Type::Bool: {
@@ -152,12 +152,12 @@ void plw::writeObject(const FlatNode &node, uint8_t objectRefSize) {
   }
 }
 
-void plw::writeUIntBytes(uint64_t val, uint8_t numBytes) {
+void PlistWriter::writeUIntBytes(uint64_t val, uint8_t numBytes) {
   for (int i = numBytes - 1; i >= 0; i--)
     out.push_back((val >> (i * 8)) & 0xFF);
 }
 
-void plw::writeCountedTag(uint8_t baseTag, size_t count) {
+void PlistWriter::writeCountedTag(uint8_t baseTag, size_t count) {
   if (count < 0xF) {
     out.push_back(baseTag | static_cast<uint8_t>(count));
   } else {
@@ -169,7 +169,7 @@ void plw::writeCountedTag(uint8_t baseTag, size_t count) {
   }
 }
 
-uint8_t plw::bytesNeeded(uint64_t maxVal) {
+uint8_t PlistWriter::bytesNeeded(uint64_t maxVal) {
   if (maxVal <= 0xFF)
     return 1;
   if (maxVal <= 0xFFFF)
@@ -179,9 +179,9 @@ uint8_t plw::bytesNeeded(uint64_t maxVal) {
   return 8;
 }
 
-void plw::writeTrailer(uint8_t offsetIntSize, uint8_t objectRefSize,
-                       uint64_t numObjects, uint64_t topObject,
-                       uint64_t offsetTableOffset) {
+void PlistWriter::writeTrailer(uint8_t offsetIntSize, uint8_t objectRefSize,
+                               uint64_t numObjects, uint64_t topObject,
+                               uint64_t offsetTableOffset) {
   uint8_t trailer[32] = {}; // Valid BPLIST trailer is exactly 32 bytes
   trailer[6] = offsetIntSize;
   trailer[7] = objectRefSize;
@@ -191,7 +191,11 @@ void plw::writeTrailer(uint8_t offsetIntSize, uint8_t objectRefSize,
   out.insert(out.end(), trailer, trailer + 32);
 }
 
-void plw::writeBE64(uint8_t *dst, uint64_t val) {
+void PlistWriter::writeBE64(uint8_t *dst, uint64_t val) {
   for (int i = 7; i >= 0; i--)
     dst[i] = val & 0xFF, val >>= 8;
+}
+
+std::unique_ptr<PlistWriter> create_plist_writer() {
+  return std::make_unique<PlistWriter>();
 }

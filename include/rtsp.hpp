@@ -27,14 +27,21 @@ public:
   bool is_verified() { return verified_; };
   u8Vec_t get_shared_key();
 
+  std::tuple<std::string, u8Vec_t> get_answer() {
+    return {sendHeader_, sendBody_};
+  };
+
 private:
   std::atomic<bool> verified_{false};
   int clientID_, messageLength_, contentLength_, CSeq_;
   char *body_, *bodyBuffer_, *msg_;
   std::string title_, msgHeader_, macAddress_, pi_;
-  PlistWriter plistWriter_;
   char header[256];
+  std::string sendHeader_;
+  u8Vec_t sendBody_;
+  size_t sendHeaderLen_;
 
+  std::unique_ptr<PlistWriter> plistWriter_;
   std::unique_ptr<SRPHandler> srpHandler_;
   std::unique_ptr<CryptoHandler> cryptoHandler_;
   std::shared_ptr<FeatureFlags> featureFlags_;

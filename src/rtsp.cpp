@@ -8,7 +8,6 @@
 #include "tlv8.hpp"
 #include "utils.hpp"
 
-#include <codecvt>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -25,18 +24,23 @@ RTSPParser::RTSPParser(int client_fd, std::string macAddress, std::string pi,
                        std::shared_ptr<StatusFlags> statusFlags,
                        std::shared_ptr<PairingManager> pairingManager)
     : clientID_(client_fd), contentLength_(), CSeq_(), msg_{},
-      macAddress_(macAddress), pi_(pi), plistWriter_(), header{},
-      featureFlags_(featureFlags), statusFlags_(statusFlags),
-      pairingManager_(pairingManager) {
+      macAddress_(macAddress), pi_(pi), header{}, featureFlags_(featureFlags),
+      statusFlags_(statusFlags), pairingManager_(pairingManager) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
+
+  plistWriter_ = create_plist_writer();
   tlv8Decoder_ = create_tlv8_decoder();
   tlv8Encoder_ = create_tlv8_encoder();
   cryptoHandler_ = create_crypto_handler();
   srpHandler_ = create_srp_handler();
 }
 
-RTSPParser::~RTSPParser() {}
+RTSPParser::~RTSPParser() {
+  free(body_);
+  free(bodyBuffer_);
+  free(msg_);
+}
 
 int RTSPParser::set_client(int currentClient) {
   clientID_ = currentClient;
@@ -103,7 +107,7 @@ int RTSPParser::reset_state() {
 u8Vec_t RTSPParser::create_plist() {
   using V = PlistWriter::Value;
 
-  auto plist = plistWriter_.serialize(V::dict({
+  auto plist = plistWriter_->serialize(V::dict({
       {"deviceID", V::string(macAddress_)},
       {"features", V::uint(featureFlags_->get_raw())},
       {"model", V::string("AudioAccessory6,1")},
@@ -602,6 +606,11 @@ int RTSPParser::rtsp_post_fp_setup() {
   u8Vec_t vecBody(reinterpret_cast<const char *>(body_) + 4,
                   reinterpret_cast<const char *>(body_) + contentLength_);
 
+  fairPlayWrapper_->set_mode(vecBody[8]);
+  std::cout << chars_to_hex(vecBody) << std::endl;
+  std::cout << vecBody[7] << std::endl;
+  std::cout << vecBody[8] << std::endl;
+
   std::cout << fplyString << std::endl;
   std::cout << chars_to_hex(vecBody) << std::endl;
 
@@ -626,8 +635,9 @@ int RTSPParser::rtsp_post_fp_setup() {
                             "\r\n",
                             CSeq_, int(body.size()));
 
-  send(clientID_, header, header_len, 0);
-  send(clientID_, body.data(), body.size(), 0);
+  sendHeaderLen_ = header_len;
+  sendHeader_ = header;
+  sendBody_ = std::vector<uint8_t>(body);
 
   std::cout << header << std::endl;
   std::cout << chars_to_hex(body) << std::endl;
@@ -714,8 +724,6 @@ int RTSPParser::get_body() {
     body_ = bodyBuffer_;
 
     remaining -= receivedSize;
-
-    free(bodyBuffer_);
   } else if (remaining > 0) {
     int receivedSize =
         recv(clientID_, body_ + bodyRead, remaining, MSG_WAITALL);

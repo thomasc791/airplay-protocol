@@ -11,10 +11,13 @@ public:
   ~FairPlayWrapper() = default;
 
   u8Vec_t get_fp_cert();
+  void set_mode(uint8_t mode);
 
 private:
   std::vector<std::vector<uint8_t>> AESKeyB64_, keyMsgHex_,
       expectedDecryptResults_;
+
+  uint8_t mode_;
 
   void set_aesb64();
   void set_key_msg_hex();

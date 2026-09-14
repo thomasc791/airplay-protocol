@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -11,7 +12,8 @@ public:
 
   struct Value {
     using Array = std::vector<Value>;
-    using Dict = std::vector<std::pair<std::string, Value>>;
+    struct Entry;
+    using Dict = std::vector<Entry>;
 
     enum class Type { Bool, UInt, Data, String, Array, Dict };
     Type type;
@@ -53,3 +55,10 @@ private:
                     uint64_t offsetTableOffset);
   void writeBE64(uint8_t *dst, uint64_t val);
 };
+
+struct PlistWriter::Value::Entry {
+  std::string key;
+  Value value;
+};
+
+std::unique_ptr<PlistWriter> create_plist_writer();

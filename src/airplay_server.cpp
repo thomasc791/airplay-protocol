@@ -177,28 +177,42 @@ void AirPlayServer::handle_client(int clientID) {
       break;
     }
 
-    rtspParser->set_msg(buffer, bytes_read);
     if (!rtspParser->is_verified()) {
+      rtspParser->set_msg(buffer, bytes_read);
       rtspParser->parse_message();
     } else if (rtspParser->is_verified() && !cipherTransporter) {
       cipherTransporter =
           create_cipher_transporter(rtspParser->get_shared_key());
     }
+
     if (cipherTransporter) {
+      std::cout << "Message: " << std::endl;
+      std::cout << chars_to_hex(u8Vec_t(&buffer[0], buffer + bytes_read))
+                << std::endl;
+
       cipherTransporter->set_message(buffer, bytes_read);
 
       auto aad = cipherTransporter->cipher_length();
       auto [cipher, tag] = get_cipher_tag(cipherTransporter->get_cipher());
       auto nonce = cipherTransporter->get_read_nonce();
 
-      cipherTransporter->decrypt(cipher, aad, nonce, tag);
+      auto decryptResult = cipherTransporter->decrypt(cipher, aad, nonce, tag);
 
-      auto decryptedChars = cipherTransporter->get_decrypted();
-      std::string decrypted(decryptedChars.begin(), decryptedChars.end());
-      char *dc = (char *)decrypted.c_str();
+      std::string decrypted(decryptResult.plaintext.begin(),
+                            decryptResult.plaintext.end());
 
-      rtspParser->set_msg(dc, decrypted.size());
+      rtspParser->set_msg((char *)decrypted.c_str(), decrypted.size());
       rtspParser->parse_message();
+
+      auto [header, body] = rtspParser->get_answer();
+      auto payload = u8Vec_t(header.begin(), header.end());
+      payload.insert(payload.end(), body.begin(), body.end());
+
+      aad = cipherTransporter->set_aad(payload);
+      auto encryptResult = cipherTransporter->encrypt(
+          payload, aad, cipherTransporter->get_write_nonce());
+
+      send(clientID,
     }
   }
   close(clientID);
