@@ -73,7 +73,9 @@ private:
   int pair_setup_m6();
 
   int rtsp_post_fp_setup();
-  int fp3_setup();
+  u8Vec_t fp3_setup_m2();
+  u8Vec_t fp3_setup_m3();
+  u8Vec_t fp3_setup_m4();
 
   u8Vec_t create_plist();
 };

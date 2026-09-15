@@ -61,21 +61,21 @@ int RTSPParser::parse_message() {
   get_title();
   get_body();
 
-  if (strstr(msg_, "GET /info")) {
+  if ("GET /info RTSP/1.0" == title_) {
     rtsp_get_info();
-  } else if (strstr(msg_, "OPTIONS *")) {
+  } else if ("OPTIONS * RTSP/1.0" == title_) {
     rtsp_get_options();
-  } else if (strstr(msg_, "POST /command")) {
+  } else if ("POST /command RTSP/1.0" == title_) {
     rtsp_post_commands();
-  } else if (strstr(msg_, "POST /fp-setup")) {
-    std::cout << "/fp-setup" << std::endl;
-    rtsp_post_fp_setup();
-  } else if (strstr(msg_, "POST /pair-setup")) {
-    std::cout << "/pair-setup" << std::endl;
-    rtsp_post_pair_setup();
-  } else if (strstr(msg_, "POST /pair-verify")) {
+  } else if ("POST /pair-verify RTSP/1.0" == title_) {
     std::cout << "/pair-verify" << std::endl;
     rtsp_post_pair_verify();
+  } else if ("POST /pair-setup RTSP/1.0" == title_) {
+    std::cout << "/pair-setup" << std::endl;
+    rtsp_post_pair_setup();
+  } else if ("POST /fp-setup RTSP/1.0" == title_) {
+    std::cout << "/fp-setup" << std::endl;
+    rtsp_post_fp_setup();
   } else {
     std::cout << msg_ << std::endl;
     std::cout << "[RTSPParser] Unknown or encrypted message received! Lengte: "
@@ -598,20 +598,32 @@ int RTSPParser::rtsp_post_fp_setup() {
   if (!fairPlayWrapper_)
     fairPlayWrapper_ = create_fp_wrapper();
 
-  u8Vec_t body;
+  u8Vec_t fpBody(reinterpret_cast<const uint8_t *>(body_),
+                 reinterpret_cast<const uint8_t *>(body_) + contentLength_);
 
+  u8Vec_t body;
   u8Vec_t vecBody(reinterpret_cast<const char *>(body_) + 4,
                   reinterpret_cast<const char *>(body_) + contentLength_);
 
-  fairPlayWrapper_->set_mode(vecBody[10]);
+  auto fpVersion = vecBody[0];
+  if (0x03 != fpVersion) {
+    return 0;
+  }
 
-  std::cout << chars_to_hex(vecBody) << std::endl;
-  auto reply = fairPlayWrapper_->get_reply_message();
+  auto fpState = vecBody[2];
+  auto fpMode = vecBody[10];
 
-  switch (vecBody[0]) {
+  std::cout << chars_to_hex(fpBody) << std::endl;
+  std::cout << "State: M" << (int)fpState << std::endl;
+
+  switch (fpState) {
+  case (0x01):
+    fairPlayWrapper_->set_mode(fpMode);
+    body = fp3_setup_m2();
+    break;
   case (0x03):
-    body.insert(body.end(), reply.begin(), reply.end());
-    fp3_setup();
+    fp3_setup_m3();
+    body = fp3_setup_m4();
     break;
   }
 
@@ -634,7 +646,24 @@ int RTSPParser::rtsp_post_fp_setup() {
   return 1;
 }
 
-int RTSPParser::fp3_setup() { return 1; }
+u8Vec_t RTSPParser::fp3_setup_m2() {
+  return fairPlayWrapper_->get_reply_message();
+}
+
+u8Vec_t RTSPParser::fp3_setup_m3() {
+  fairPlayWrapper_->set_key_msg(body_);
+
+  return {};
+}
+
+u8Vec_t RTSPParser::fp3_setup_m4() {
+  u8Vec_t body;
+  auto fpReplyHeader = fairPlayWrapper_->get_reply_header();
+  body.insert(body.begin(), fpReplyHeader.begin(), fpReplyHeader.end());
+  body.insert(body.begin() + 12, &body_[144], &body_[164]);
+
+  return body;
+}
 
 int RTSPParser::rtsp_post_pair_error() {
   uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2

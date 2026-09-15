@@ -208,14 +208,9 @@ void AirPlayServer::handle_client(int clientID) {
       auto encryptResult = cipherTransporter->encrypt(
           payload, aad, cipherTransporter->get_write_nonce());
 
-      std::cout << "AAD " << std::dec << payload.size() << std::endl;
-      std::cout << "AAD " << chars_to_hex(aad) << std::endl;
-
       if (encryptResult.success)
         send(clientID, encryptResult.ciphertext.data(),
              encryptResult.ciphertext.size(), 0);
-
-      std::cout << chars_to_hex(encryptResult.ciphertext) << std::endl;
     }
   }
   close(clientID);

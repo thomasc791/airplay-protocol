@@ -11,7 +11,10 @@ public:
   ~FairPlayWrapper() = default;
 
   void set_mode(uint8_t mode);
+  void set_key_msg(char *msg);
+
   u8Vec_t get_reply_message();
+  u8Vec_t get_reply_header() { return replyHeader_; }
 
 private:
   std::vector<std::vector<uint8_t>> AESKeyB64_, keyMsgHex_,
@@ -19,10 +22,12 @@ private:
 
   std::vector<u8Vec_t> replyMessage_;
 
+  u8Vec_t keyMessage_;
+  u8Vec_t replyHeader_;
+
   uint8_t mode_;
 
   void set_aesb64();
-  void set_key_msg_hex();
   void set_reply_message();
 };
 

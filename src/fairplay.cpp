@@ -1,5 +1,8 @@
 #include "fairplay.hpp"
 #include "crypto.hpp"
+#include "utils.hpp"
+
+#include <iostream>
 
 extern "C" {
 #include "playfair.h"
@@ -12,6 +15,11 @@ extern const unsigned char default_sap[276];
 FairPlayWrapper::FairPlayWrapper() { set_reply_message(); }
 
 void FairPlayWrapper::set_mode(uint8_t mode) { mode_ = mode; };
+
+void FairPlayWrapper::set_key_msg(char *msg) {
+  keyMessage_ = u8Vec_t(reinterpret_cast<const uint8_t *>(msg),
+                        reinterpret_cast<const uint8_t *>(msg) + 164);
+}
 
 void FairPlayWrapper::set_reply_message() {
   replyMessage_ = {
@@ -63,10 +71,15 @@ void FairPlayWrapper::set_reply_message() {
        0x88, 0x93, 0xce, 0x44, 0x31, 0x1e, 0x4b, 0xe6, 0xc0, 0x53, 0x51, 0x93,
        0xe5, 0xef, 0x72, 0xe8, 0x68, 0x62, 0x33, 0x72, 0x9c, 0x22, 0x7d, 0x82,
        0x0c, 0x99, 0x94, 0x45, 0xd8, 0x92, 0x46, 0xc8, 0xc3, 0x59}};
+
+  replyHeader_ = {0x46, 0x50, 0x4c, 0x59, 0x03, 0x01,
+                  0x04, 0x00, 0x00, 0x00, 0x00, 0x14};
 }
 
 u8Vec_t FairPlayWrapper::get_reply_message() {
-  return replyMessage_[mode_ - 1];
+  u8Vec_t sap(default_sap + 124, default_sap + 254);
+  std::cout << chars_to_hex(sap) << std::endl;
+  return replyMessage_[mode_];
 }
 
 std::unique_ptr<FairPlayWrapper> create_fp_wrapper() {

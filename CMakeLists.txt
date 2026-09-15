@@ -20,7 +20,9 @@ include_directories(
     ${AVAHI_INCLUDE_DIRS}
 )
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/playfair)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/playfair)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/plist)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/tlv8)
 
 file(GLOB_RECURSE SOURCES 
     "src/*.cpp"
@@ -35,6 +37,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenSSL::SSL
     ${AVAHI_LIBRARIES}
     playfair
+    plist
+    tlv8
 )
 
 message(STATUS "Configured ${PROJECT_NAME} for Linux / Raspberry Pi target")
