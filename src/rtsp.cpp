@@ -1,9 +1,8 @@
 #include "rtsp.hpp"
 
 #include "crypto.hpp"
-#include "info_plist.hpp"
 #include "pairing-manager.hpp"
-#include "plist.hpp"
+#include "plist_encoder.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
 #include "utils.hpp"
@@ -30,7 +29,7 @@ RTSPParser::RTSPParser(int client_fd, std::string macAddress, std::string pi,
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
 
-  plistWriter_ = create_plist_writer();
+  plistEncoder_ = create_plist_encoder();
   tlv8Decoder_ = create_tlv8_decoder();
   tlv8Encoder_ = create_tlv8_encoder();
   cryptoHandler_ = create_crypto_handler();
@@ -104,9 +103,9 @@ int RTSPParser::reset_state() {
 }
 
 u8Vec_t RTSPParser::create_plist() {
-  using V = PlistWriter::Value;
+  using V = PlistEncoder::Value;
 
-  auto plist = plistWriter_->serialize(V::dict({
+  auto plist = plistEncoder_->serialize(V::dict({
       {"deviceID", V::string(macAddress_)},
       {"features", V::uint(featureFlags_->get_raw())},
       {"model", V::string("AudioAccessory6,1")},

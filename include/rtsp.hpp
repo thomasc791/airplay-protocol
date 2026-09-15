@@ -4,7 +4,7 @@
 #include "fairplay.hpp"
 #include "flags.hpp"
 #include "pairing-manager.hpp"
-#include "plist.hpp"
+#include "plist_encoder.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
 #include <atomic>
@@ -40,7 +40,7 @@ private:
   u8Vec_t sendBody_;
   size_t sendHeaderLen_;
 
-  std::unique_ptr<PlistWriter> plistWriter_;
+  std::unique_ptr<PlistEncoder> plistEncoder_;
   std::unique_ptr<SRPHandler> srpHandler_;
   std::unique_ptr<CryptoHandler> cryptoHandler_;
   std::shared_ptr<FeatureFlags> featureFlags_;

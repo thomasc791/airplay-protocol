@@ -5,10 +5,10 @@
 #include <string>
 #include <vector>
 
-class PlistWriter {
+class PlistEncoder {
 public:
-  PlistWriter();
-  ~PlistWriter();
+  PlistEncoder();
+  ~PlistEncoder();
 
   struct Value {
     using Array = std::vector<Value>;
@@ -33,7 +33,7 @@ public:
     static Value dict(Dict v);
   };
 
-  std::vector<uint8_t> serialize(const PlistWriter::Value &root);
+  std::vector<uint8_t> serialize(const PlistEncoder::Value &root);
 
 private:
   struct FlatNode {
@@ -56,9 +56,9 @@ private:
   void writeBE64(uint8_t *dst, uint64_t val);
 };
 
-struct PlistWriter::Value::Entry {
+struct PlistEncoder::Value::Entry {
   std::string key;
   Value value;
 };
 
-std::unique_ptr<PlistWriter> create_plist_writer();
+std::unique_ptr<PlistEncoder> create_plist_encoder();
