@@ -89,6 +89,7 @@ EncryptionResult CipherTransporter::encrypt(u8Vec_t payload, u8Vec_t aad,
 
   int outlen = 0;
   result.ciphertext.resize(payload.size());
+  result.tag.resize(16);
 
   int err = EVP_EncryptInit_ex(ctx.get(), EVP_chacha20_poly1305(), nullptr,
                                encryptionKey_.data(), nonce.data());
@@ -106,8 +107,10 @@ EncryptionResult CipherTransporter::encrypt(u8Vec_t payload, u8Vec_t aad,
     return result;
   }
 
+  result.ciphertext.insert(result.ciphertext.begin(), aad.begin(), aad.end());
   result.ciphertext.insert(result.ciphertext.end(), result.tag.begin(),
                            result.tag.end());
+
   result.success = true;
 
   return result;

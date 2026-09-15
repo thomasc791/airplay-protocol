@@ -44,16 +44,6 @@ std::string remove_colon(const std::string str) {
   return str2;
 }
 
-template <typename T> std::vector<uint8_t> lil_endian(T num) {
-  size_t numBytes = sizeof(T) / sizeof(uint8_t);
-  std::vector<uint8_t> lilEndianVec(numBytes);
-
-  for (size_t i = 1; i <= numBytes; i++)
-    lilEndianVec[numBytes - i] = num >> ((i - 1) * 8);
-
-  return lilEndianVec;
-}
-
 std::string get_system_mac_address() {
   struct ifaddrs *ifaddr = nullptr;
   if (getifaddrs(&ifaddr) == -1) {

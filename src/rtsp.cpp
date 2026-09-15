@@ -23,9 +23,10 @@ RTSPParser::RTSPParser(int client_fd, std::string macAddress, std::string pi,
                        std::shared_ptr<FeatureFlags> featureFlags,
                        std::shared_ptr<StatusFlags> statusFlags,
                        std::shared_ptr<PairingManager> pairingManager)
-    : clientID_(client_fd), contentLength_(), CSeq_(), msg_{},
-      macAddress_(macAddress), pi_(pi), header{}, featureFlags_(featureFlags),
-      statusFlags_(statusFlags), pairingManager_(pairingManager) {
+    : clientID_(client_fd), contentLength_(), CSeq_(), bodyBuffer_(nullptr),
+      msg_(nullptr), macAddress_(macAddress), pi_(pi), header{},
+      featureFlags_(featureFlags), statusFlags_(statusFlags),
+      pairingManager_(pairingManager) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
 
@@ -36,11 +37,7 @@ RTSPParser::RTSPParser(int client_fd, std::string macAddress, std::string pi,
   srpHandler_ = create_srp_handler();
 }
 
-RTSPParser::~RTSPParser() {
-  free(body_);
-  free(bodyBuffer_);
-  free(msg_);
-}
+RTSPParser::~RTSPParser() { free(bodyBuffer_); }
 
 int RTSPParser::set_client(int currentClient) {
   clientID_ = currentClient;
@@ -90,11 +87,13 @@ int RTSPParser::parse_message() {
     printf("\n");
   }
   printf("\n");
-
-  memset(msg_, 0, MAX_MSG_BUFFER_SIZE);
   messageLength_ = 0;
 
   return 1;
+}
+
+std::tuple<std::string, u8Vec_t> RTSPParser::get_response() {
+  return {sendHeader_, sendBody_};
 }
 
 int RTSPParser::reset_state() {
@@ -600,28 +599,18 @@ int RTSPParser::rtsp_post_fp_setup() {
     fairPlayWrapper_ = create_fp_wrapper();
 
   u8Vec_t body;
-  std::string fplyString(reinterpret_cast<const char *>(body_),
-                         reinterpret_cast<const char *>(body_) + 4);
 
   u8Vec_t vecBody(reinterpret_cast<const char *>(body_) + 4,
                   reinterpret_cast<const char *>(body_) + contentLength_);
 
-  fairPlayWrapper_->set_mode(vecBody[8]);
-  std::cout << chars_to_hex(vecBody) << std::endl;
-  std::cout << vecBody[7] << std::endl;
-  std::cout << vecBody[8] << std::endl;
+  fairPlayWrapper_->set_mode(vecBody[10]);
 
-  std::cout << fplyString << std::endl;
   std::cout << chars_to_hex(vecBody) << std::endl;
+  auto reply = fairPlayWrapper_->get_reply_message();
 
   switch (vecBody[0]) {
   case (0x03):
-    body.insert(body.end(), fplyString.begin(), fplyString.end());
-    body.insert(body.end(), {0x03, 0x01, 0x03, 0x00});
-    auto fpCertification = fairPlayWrapper_->get_fp_cert();
-    auto length = lil_endian((uint32_t)fpCertification.size());
-    body.insert(body.end(), length.begin(), length.end());
-    body.insert(body.end(), fpCertification.begin(), fpCertification.end());
+    body.insert(body.end(), reply.begin(), reply.end());
     fp3_setup();
     break;
   }
@@ -637,7 +626,7 @@ int RTSPParser::rtsp_post_fp_setup() {
 
   sendHeaderLen_ = header_len;
   sendHeader_ = header;
-  sendBody_ = std::vector<uint8_t>(body);
+  sendBody_ = body;
 
   std::cout << header << std::endl;
   std::cout << chars_to_hex(body) << std::endl;
@@ -645,10 +634,7 @@ int RTSPParser::rtsp_post_fp_setup() {
   return 1;
 }
 
-int RTSPParser::fp3_setup() {
-  std::cout << chars_to_hex(fairPlayWrapper_->get_fp_cert()) << std::endl;
-  return 1;
-}
+int RTSPParser::fp3_setup() { return 1; }
 
 int RTSPParser::rtsp_post_pair_error() {
   uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2

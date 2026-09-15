@@ -10,6 +10,7 @@
 #include <atomic>
 
 #include <memory>
+#include <tuple>
 
 #define MAX_MSG_BUFFER_SIZE 2048
 
@@ -27,9 +28,7 @@ public:
   bool is_verified() { return verified_; };
   u8Vec_t get_shared_key();
 
-  std::tuple<std::string, u8Vec_t> get_answer() {
-    return {sendHeader_, sendBody_};
-  };
+  std::tuple<std::string, u8Vec_t> get_response();
 
 private:
   std::atomic<bool> verified_{false};

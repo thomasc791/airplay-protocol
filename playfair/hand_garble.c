@@ -95,7 +95,7 @@ void garble(unsigned char* buffer0, unsigned char* buffer1, unsigned char* buffe
 
    // This LOOKS like it should be a rol8x, but it just doesnt work out because if the shift amount is 0, then the output is 0 too :(
    // FIXME: Switch to weird_ror8
-   buffer1[15] = (3*(((buffer1[72] >> (buffer4[buffer1[190] % 21] & 7)) ^ (buffer1[72] << ((7 - (buffer4[buffer1[190] % 21]-1)&7)))) - (3*buffer4[buffer1[126] % 21]))) ^ buffer1[15];
+   buffer1[15] = (3*(((buffer1[72] >> (buffer4[buffer1[190] % 21] & 7)) ^ (buffer1[72] << ((7 - (buffer4[buffer1[190] % 21]-1) & 7)))) - (3*buffer4[buffer1[126] % 21]))) ^ buffer1[15];
    printf("buffer1[15] = %02x\n", buffer1[15]);
 
    buffer0[15] ^= buffer2[buffer1[181] % 35] * buffer2[buffer1[181] % 35] * buffer2[buffer1[181] % 35];

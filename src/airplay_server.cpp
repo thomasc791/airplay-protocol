@@ -186,10 +186,6 @@ void AirPlayServer::handle_client(int clientID) {
     }
 
     if (cipherTransporter) {
-      std::cout << "Message: " << std::endl;
-      std::cout << chars_to_hex(u8Vec_t(&buffer[0], buffer + bytes_read))
-                << std::endl;
-
       cipherTransporter->set_message(buffer, bytes_read);
 
       auto aad = cipherTransporter->cipher_length();
@@ -204,15 +200,22 @@ void AirPlayServer::handle_client(int clientID) {
       rtspParser->set_msg((char *)decrypted.c_str(), decrypted.size());
       rtspParser->parse_message();
 
-      auto [header, body] = rtspParser->get_answer();
-      auto payload = u8Vec_t(header.begin(), header.end());
+      auto [header, body] = rtspParser->get_response();
+      u8Vec_t payload(header.begin(), header.end());
       payload.insert(payload.end(), body.begin(), body.end());
 
       aad = cipherTransporter->set_aad(payload);
       auto encryptResult = cipherTransporter->encrypt(
           payload, aad, cipherTransporter->get_write_nonce());
 
-      send(clientID,
+      std::cout << "AAD " << std::dec << payload.size() << std::endl;
+      std::cout << "AAD " << chars_to_hex(aad) << std::endl;
+
+      if (encryptResult.success)
+        send(clientID, encryptResult.ciphertext.data(),
+             encryptResult.ciphertext.size(), 0);
+
+      std::cout << chars_to_hex(encryptResult.ciphertext) << std::endl;
     }
   }
   close(clientID);
