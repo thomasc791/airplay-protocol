@@ -30,6 +30,15 @@ std::string chars_to_hex(const std::vector<uint8_t> &data) {
   return ss.str();
 }
 
+std::string chars_to_hex_c(const uint8_t *data, size_t len) {
+  std::stringstream ss;
+  ss << std::hex << std::setfill('0');
+  for (size_t i = 0; i < len; i++) {
+    ss << std::setw(2) << static_cast<int>(data[i]);
+  }
+  return ss.str();
+}
+
 std::string remove_colon(const std::string str) {
   std::string str2;
   for (const auto c : str) {

@@ -4,6 +4,7 @@
 #include "fairplay.hpp"
 #include "flags.hpp"
 #include "pairing-manager.hpp"
+#include "plist_decoder.hpp"
 #include "plist_encoder.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
@@ -34,13 +35,14 @@ private:
   std::atomic<bool> verified_{false};
   int clientID_, messageLength_, contentLength_, CSeq_;
   char *body_, *bodyBuffer_, *msg_;
-  std::string title_, msgHeader_, macAddress_, pi_;
+  std::string request_, requestType_, title_, msgHeader_, macAddress_, pi_;
   char header[256];
   std::string sendHeader_;
   u8Vec_t sendBody_;
   size_t sendHeaderLen_;
 
   std::unique_ptr<PlistEncoder> plistEncoder_;
+  std::unique_ptr<PlistDecoder> plistDecoder_;
   std::unique_ptr<SRPHandler> srpHandler_;
   std::unique_ptr<CryptoHandler> cryptoHandler_;
   std::shared_ptr<FeatureFlags> featureFlags_;
@@ -53,6 +55,8 @@ private:
   int get_content_length();
   int get_cseq();
   int reset_state();
+  int get_req();
+  int get_req_type();
   int get_title();
   int get_body();
   int rtsp_get_options();
@@ -76,6 +80,8 @@ private:
   u8Vec_t fp3_setup_m2();
   u8Vec_t fp3_setup_m3();
   u8Vec_t fp3_setup_m4();
+
+  int rtsp_setup();
 
   u8Vec_t create_plist();
 };

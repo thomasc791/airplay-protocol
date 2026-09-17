@@ -6,6 +6,7 @@
 
 std::vector<uint8_t> hex_to_chars(const std::string &hexStr);
 std::string chars_to_hex(const std::vector<uint8_t> &data);
+std::string chars_to_hex_c(const uint8_t *data, size_t len);
 
 template <typename T> std::vector<uint8_t> lil_endian(T num) {
   size_t numBytes = sizeof(T) / sizeof(uint8_t);

@@ -30,6 +30,7 @@ RTSPParser::RTSPParser(int client_fd, std::string macAddress, std::string pi,
             << std::endl;
 
   plistEncoder_ = create_plist_encoder();
+  plistDecoder_ = create_plist_decoder();
   tlv8Decoder_ = create_tlv8_decoder();
   tlv8Encoder_ = create_tlv8_encoder();
   cryptoHandler_ = create_crypto_handler();
@@ -57,24 +58,33 @@ int RTSPParser::parse_message() {
 
   get_content_length();
   get_cseq();
+  get_req();
+  get_req_type();
   get_title();
   get_body();
 
-  if ("GET /info RTSP/1.0" == title_) {
+  std::cout << request_ << std::endl;
+  std::cout << requestType_ << std::endl;
+  std::cout << title_ << std::endl;
+
+  if ("/info RTSP/1.0" == title_) {
     rtsp_get_info();
-  } else if ("OPTIONS * RTSP/1.0" == title_) {
+  } else if ("* RTSP/1.0" == title_) {
     rtsp_get_options();
-  } else if ("POST /command RTSP/1.0" == title_) {
+  } else if ("/command RTSP/1.0" == title_) {
     rtsp_post_commands();
-  } else if ("POST /pair-verify RTSP/1.0" == title_) {
+  } else if ("/pair-verify RTSP/1.0" == title_) {
     std::cout << "/pair-verify" << std::endl;
     rtsp_post_pair_verify();
-  } else if ("POST /pair-setup RTSP/1.0" == title_) {
+  } else if ("/pair-setup RTSP/1.0" == title_) {
     std::cout << "/pair-setup" << std::endl;
     rtsp_post_pair_setup();
-  } else if ("POST /fp-setup RTSP/1.0" == title_) {
+  } else if ("/fp-setup RTSP/1.0" == title_) {
     std::cout << "/fp-setup" << std::endl;
     rtsp_post_fp_setup();
+  } else if ("SETUP" == requestType_) {
+    std::cout << "SETUP" << std::endl;
+    rtsp_setup();
   } else {
     std::cout << msg_ << std::endl;
     std::cout << "[RTSPParser] Unknown or encrypted message received! Lengte: "
@@ -645,6 +655,30 @@ int RTSPParser::rtsp_post_fp_setup() {
   return 1;
 }
 
+int RTSPParser::rtsp_setup() {
+  u8Vec_t body;
+
+  plistDecoder_->decode(body_, contentLength_);
+
+  int header_len = snprintf(header, sizeof(header),
+                            "RTSP/1.0 200 OK\r\n"
+                            "CSeq: %d\r\n"
+                            "Server: AirTunes/366.0\r\n"
+                            "Content-Type: application/octet-stream\r\n"
+                            "Content-Length: %d\r\n"
+                            "\r\n",
+                            CSeq_, int(body.size()));
+
+  sendHeaderLen_ = header_len;
+  sendHeader_ = header;
+  sendBody_ = body;
+
+  std::cout << header << std::endl;
+  std::cout << chars_to_hex(body) << std::endl;
+
+  return 1;
+}
+
 u8Vec_t RTSPParser::fp3_setup_m2() {
   return fairPlayWrapper_->get_reply_message();
 }
@@ -703,12 +737,31 @@ int RTSPParser::get_content_length() {
   return 1;
 }
 
-int RTSPParser::get_title() {
-  const char *lineEnd = strstr(msg_, "\r\n");
-  if (!lineEnd)
+int RTSPParser::get_req() {
+  const char *request = strstr(msg_, "\r\n");
+  if (!request)
     return -1;
 
-  title_ = std::string((const char *)msg_, lineEnd);
+  request_ = std::string((const char *)msg_, request);
+
+  return 1;
+}
+
+int RTSPParser::get_req_type() {
+  std::string::size_type n = request_.find(" ");
+  if (std::string::npos == n)
+    return -1;
+
+  requestType_ = std::string(request_.begin(), request_.begin() + n);
+  return 1;
+}
+
+int RTSPParser::get_title() {
+  std::string::size_type n = request_.find("/");
+  if (std::string::npos == n)
+    return -1;
+
+  title_ = std::string(request_.begin() + n, request_.end());
   return 1;
 }
 
