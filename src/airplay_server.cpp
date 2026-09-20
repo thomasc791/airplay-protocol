@@ -186,16 +186,11 @@ void AirPlayServer::handle_client(int clientID) {
     }
 
     if (cipherTransporter) {
-      cipherTransporter->set_message(buffer, bytes_read);
-
-      auto aad = cipherTransporter->cipher_length();
-      auto [cipher, tag] = get_cipher_tag(cipherTransporter->get_cipher());
-      auto nonce = cipherTransporter->get_read_nonce();
-
-      std::cout << chars_to_hex_c((const uint8_t *)buffer, bytes_read)
-                << std::endl;
-
-      auto decryptResult = cipherTransporter->decrypt(cipher, aad, nonce, tag);
+      auto declared = (uint8_t)buffer[0] | ((uint8_t)buffer[1] << 8);
+      std::cout << "read=" << bytes_read
+                << " frame_expects=" << declared + 2 + 16 << std::endl;
+      auto decryptResult =
+          cipherTransporter->decrypt_frames(buffer, bytes_read);
 
       std::string decrypted(decryptResult.plaintext.begin(),
                             decryptResult.plaintext.end());
@@ -207,7 +202,7 @@ void AirPlayServer::handle_client(int clientID) {
       u8Vec_t payload(header.begin(), header.end());
       payload.insert(payload.end(), body.begin(), body.end());
 
-      aad = cipherTransporter->set_aad(payload);
+      auto aad = cipherTransporter->set_aad(payload);
       auto encryptResult = cipherTransporter->encrypt(
           payload, aad, cipherTransporter->get_write_nonce());
 

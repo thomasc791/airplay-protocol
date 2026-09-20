@@ -49,34 +49,55 @@ u8Vec_t CipherTransporter::cipher_length() {
   return u8Vec_t(body_.begin(), body_.begin() + 2);
 }
 
-DecryptionResult CipherTransporter::decrypt(u8Vec_t cipher, u8Vec_t aad,
-                                            u8Vec_t nonce, u8Vec_t tag) {
+DecryptionResult CipherTransporter::decrypt_frames(char *buffer, size_t len) {
+  set_message(buffer, len);
+
   DecryptionResult result;
+
+  while (body_.size() >= 2) {
+    u8Vec_t aad = cipher_length();
+    size_t frameSize = 2 + cipherLength_ + 16;
+    if (body_.size() < frameSize)
+      break;
+
+    auto [cipher, tag] = get_cipher_tag(frameSize);
+    auto nonce = get_read_nonce();
+
+    int a = decrypt(result, cipher, aad, nonce, tag);
+
+    body_.erase(body_.begin(), body_.begin() + frameSize);
+  }
+
+  return result;
+}
+
+int CipherTransporter::decrypt(DecryptionResult &result, u8Vec_t cipher,
+                               u8Vec_t aad, u8Vec_t nonce, u8Vec_t tag) {
   result.success = false;
 
   std::unique_ptr<EVP_CIPHER_CTX, EvpCtxDeleter> ctx(EVP_CIPHER_CTX_new());
   if (!ctx)
-    return result;
+    return -1;
 
   int outlen = 0;
-  result.plaintext.resize(cipherLength_);
+  size_t offset = result.plaintext.size();
+  result.plaintext.resize(offset + cipher.size());
 
   int err = EVP_DecryptInit_ex(ctx.get(), EVP_chacha20_poly1305(), nullptr,
                                decryptionKey_.data(), nonce.data());
   err = EVP_DecryptUpdate(ctx.get(), nullptr, &outlen, aad.data(), aad.size());
-  err = EVP_DecryptUpdate(ctx.get(), result.plaintext.data(), &outlen,
+  err = EVP_DecryptUpdate(ctx.get(), result.plaintext.data() + offset, &outlen,
                           cipher.data(), cipher.size());
   err = EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_SET_TAG, 16, tag.data());
   err =
-      EVP_DecryptFinal_ex(ctx.get(), result.plaintext.data() + outlen, &outlen);
+      EVP_DecryptFinal_ex(ctx.get(), result.plaintext.data() + offset, &outlen);
 
   if (err <= 0) {
     std::cerr << "Error decrypting message" << std::endl;
-    std::cout << chars_to_hex(cipher) << std::endl;
-    return result;
+    return err;
   }
 
-  return result;
+  return err;
 }
 
 EncryptionResult CipherTransporter::encrypt(u8Vec_t payload, u8Vec_t aad,
@@ -115,6 +136,15 @@ EncryptionResult CipherTransporter::encrypt(u8Vec_t payload, u8Vec_t aad,
   result.success = true;
 
   return result;
+}
+std::tuple<u8Vec_t, u8Vec_t>
+CipherTransporter::get_cipher_tag(size_t frameSize) {
+
+  auto cipherText = u8Vec_t(body_.begin() + 2, body_.begin() + frameSize - 16);
+  auto authTag =
+      u8Vec_t(body_.begin() + frameSize - 16, body_.begin() + frameSize);
+
+  return {cipherText, authTag};
 }
 
 u8Vec_t CipherTransporter::set_aad(u8Vec_t payload) {

@@ -2,6 +2,7 @@
 
 #include "crypto.hpp"
 #include "pairing_manager.hpp"
+#include "plist_encoder.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
 #include "utils.hpp"
@@ -655,9 +656,16 @@ int RTSPParser::rtsp_post_fp_setup() {
 }
 
 int RTSPParser::rtsp_setup() {
+  using V = PlistEncoder::Value;
   u8Vec_t body;
 
+  std::cout << "Decoding RTSP Setup BPlist" << std::endl;
   plistDecoder_->decode(body_, contentLength_);
+
+  std::vector<uint8_t> bplistPayload = plistEncoder_->serialize(V::dict(
+      {{"timingPort", pwVal::uint(5000)}, {"eventPort", pwVal::uint(5001)}}));
+
+  body = bplistPayload;
 
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
