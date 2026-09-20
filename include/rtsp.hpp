@@ -3,7 +3,7 @@
 #include "crypto.hpp"
 #include "fairplay.hpp"
 #include "flags.hpp"
-#include "pairing-manager.hpp"
+#include "pairing_manager.hpp"
 #include "plist_decoder.hpp"
 #include "plist_encoder.hpp"
 #include "srp.hpp"

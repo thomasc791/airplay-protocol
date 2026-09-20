@@ -11,18 +11,6 @@ public:
   PlistDecoder();
   ~PlistDecoder();
 
-  struct trailer_t {
-    uint64_t numObjects;
-    uint64_t topObject;
-    uint64_t tableSize;
-    uint8_t offsetIntSize;
-    uint8_t objectRefSize;
-
-    trailer_t()
-        : numObjects(0), topObject(0), tableSize(0), offsetIntSize(0),
-          objectRefSize(0) {}
-  };
-
   struct Value {
     using Array = std::vector<Value>;
     struct Entry;
@@ -55,6 +43,18 @@ private:
     std::vector<size_t> objRefs;
   };
 
+  struct trailer_t {
+    uint64_t numObjects;
+    uint64_t topObject;
+    uint64_t offsetTableOffset;
+    uint8_t offsetIntSize;
+    uint8_t objectRefSize;
+
+    trailer_t()
+        : numObjects(0), topObject(0), offsetTableOffset(0), offsetIntSize(0),
+          objectRefSize(0) {}
+  };
+
   trailer_t info_;
   std::vector<FlatNode> objects_;
   std::vector<uint64_t> offsets_;
@@ -67,6 +67,7 @@ private:
   uint64_t maximumValue();
   void readTrailer(char *input, size_t len);
   void readOffsets(char *plist);
+  uint64_t readObject(char *plist, const uint8_t marker);
   void readBE64(uint64_t &dst, uint8_t *val);
 };
 

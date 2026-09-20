@@ -1,8 +1,7 @@
 #include "rtsp.hpp"
 
 #include "crypto.hpp"
-#include "pairing-manager.hpp"
-#include "plist_encoder.hpp"
+#include "pairing_manager.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
 #include "utils.hpp"
@@ -265,8 +264,8 @@ int RTSPParser::rtsp_post_pair_setup() {
   std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
 
   std::cout << header << std::endl;
-  for (auto c : body)
-    std::cout << chars_to_hex({c}) << " ";
+  for (uint8_t c : body)
+    std::cout << chars_to_hex(u8Vec_t{c}) << " ";
 
   std::cout << std::endl;
 
@@ -493,7 +492,7 @@ int RTSPParser::rtsp_post_pair_verify() {
 
   std::cout << header << std::endl;
   for (auto c : body)
-    std::cout << chars_to_hex({c}) << " ";
+    std::cout << chars_to_hex(u8Vec_t{c}) << " ";
 
   std::cout << std::endl;
 

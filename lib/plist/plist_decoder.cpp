@@ -2,6 +2,7 @@
 #include "crypto.hpp"
 #include "utils.hpp"
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <iostream>
 
@@ -48,10 +49,27 @@ pwVal pwVal::dict(Dict v) {
 }
 
 u8Vec_t PlistDecoder::decode(char *plist, size_t len) {
+  u8Vec_t plistBytes(reinterpret_cast<const uint8_t *>(plist),
+                     reinterpret_cast<const uint8_t *>(plist) + len);
+
+  std::cout << chars_to_hex(plistBytes) << std::endl;
   readTrailer(plist, len);
+
+  std::cout << "Number of Objects: " << int(info_.numObjects) << std::endl;
+  std::cout << "Top Object: " << int(info_.topObject) << std::endl;
+  std::cout << "Table size: " << int(info_.offsetTableOffset) << std::endl;
+  std::cout << "Int Size Offset: " << int(info_.offsetIntSize) << std::endl;
+  std::cout << "Object reference size: " << int(info_.objectRefSize)
+            << std::endl;
 
   uint64_t maxVal = maximumValue();
   readOffsets(plist);
+
+  uint64_t rootOffset = offsets_[info_.topObject];
+  uint8_t rootMarker = plist[rootOffset];
+
+  std::cout << "Root: " << rootOffset << std::endl;
+  readObject(plist, rootMarker);
 
   return {};
 }
@@ -64,14 +82,14 @@ void PlistDecoder::readTrailer(char *input, size_t len) {
   info_.objectRefSize = trailerArray[7];
   readBE64(info_.numObjects, trailerArray + 8);
   readBE64(info_.topObject, trailerArray + 16);
-  readBE64(info_.tableSize, trailerArray + 24);
+  readBE64(info_.offsetTableOffset, trailerArray + 24);
 }
 
 void PlistDecoder::readOffsets(char *plist) {
   offsets_.resize(info_.numObjects);
-  uint64_t currentPos = info_.tableSize;
+  uint64_t currentPos = info_.offsetTableOffset;
 
-  for (uint64_t i = 0; i < info_.numObjects; i++) {
+  for (size_t i = 0; i < info_.numObjects; i++) {
     uint64_t offset = 0;
     for (size_t j = 0; j < info_.offsetIntSize; j++) {
       offset = (offset << 8) | plist[currentPos++];
@@ -79,6 +97,13 @@ void PlistDecoder::readOffsets(char *plist) {
 
     offsets_[i] = offset;
   }
+}
+
+uint64_t PlistDecoder::readObject(char *plist, const uint8_t marker) {
+  uint8_t markerByte = plist[marker];
+
+  printf("Marker: %02x", markerByte);
+  return 0;
 }
 
 uint64_t PlistDecoder::maximumValue() {

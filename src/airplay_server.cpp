@@ -1,7 +1,7 @@
 #include "airplay_server.hpp"
 #include "crypto.hpp"
 #include "flags.hpp"
-#include "pairing-manager.hpp"
+#include "pairing_manager.hpp"
 #include "rtsp.hpp"
 #include "transport_crypto.hpp"
 #include "utils.hpp"
@@ -191,6 +191,9 @@ void AirPlayServer::handle_client(int clientID) {
       auto aad = cipherTransporter->cipher_length();
       auto [cipher, tag] = get_cipher_tag(cipherTransporter->get_cipher());
       auto nonce = cipherTransporter->get_read_nonce();
+
+      std::cout << chars_to_hex_c((const uint8_t *)buffer, bytes_read)
+                << std::endl;
 
       auto decryptResult = cipherTransporter->decrypt(cipher, aad, nonce, tag);
 

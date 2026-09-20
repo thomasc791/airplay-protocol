@@ -72,6 +72,7 @@ DecryptionResult CipherTransporter::decrypt(u8Vec_t cipher, u8Vec_t aad,
 
   if (err <= 0) {
     std::cerr << "Error decrypting message" << std::endl;
+    std::cout << chars_to_hex(cipher) << std::endl;
     return result;
   }
 

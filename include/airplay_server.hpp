@@ -2,7 +2,7 @@
 
 #include "flags.hpp"
 #include "hal/mdns_service.hpp"
-#include "pairing-manager.hpp"
+#include "pairing_manager.hpp"
 
 #include <atomic>
 #include <memory>

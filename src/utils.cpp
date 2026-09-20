@@ -1,12 +1,9 @@
 #include "utils.hpp"
 
-#include <codecvt>
 #include <ifaddrs.h>
-#include <iomanip>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netpacket/packet.h>
-#include <sstream>
 #include <vector>
 
 std::vector<uint8_t> hex_to_chars(const std::string &hexStr) {
@@ -19,15 +16,6 @@ std::vector<uint8_t> hex_to_chars(const std::string &hexStr) {
   }
 
   return bytes;
-}
-
-std::string chars_to_hex(const std::vector<uint8_t> &data) {
-  std::stringstream ss;
-  ss << std::hex << std::setfill('0');
-  for (uint8_t byte : data) {
-    ss << std::setw(2) << static_cast<int>(byte);
-  }
-  return ss.str();
 }
 
 std::string chars_to_hex_c(const uint8_t *data, size_t len) {
