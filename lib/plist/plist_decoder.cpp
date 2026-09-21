@@ -56,7 +56,7 @@ void PlistDecoder::read_offsets(char *plist) {
 }
 
 int PlistDecoder::get_key_value_indices(char *plist, dict_info_t &dInfo,
-                                        const uint8_t markerOffset) {
+                                        const size_t markerOffset) {
   pointer_ = markerOffset;
 
   auto [type, size] = get_type_size(plist);
@@ -143,7 +143,7 @@ pwVal PlistDecoder::read_object(char *plist, const uint8_t type,
   return val;
 }
 
-pwVal PlistDecoder::read_dict(char *plist, const uint8_t markerOffset) {
+pwVal PlistDecoder::read_dict(char *plist, const size_t markerOffset) {
   dict_info_t dInfo;
 
   get_key_value_indices(plist, dInfo, markerOffset);

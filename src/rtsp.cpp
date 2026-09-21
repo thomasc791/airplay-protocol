@@ -670,8 +670,9 @@ int RTSPParser::rtsp_setup() {
   int header_len = snprintf(header, sizeof(header),
                             "RTSP/1.0 200 OK\r\n"
                             "CSeq: %d\r\n"
+                            "Session: 1\r\n"
                             "Server: AirTunes/366.0\r\n"
-                            "Content-Type: application/octet-stream\r\n"
+                            "Content-Type: application/x-apple-binary-plist\r\n"
                             "Content-Length: %d\r\n"
                             "\r\n",
                             CSeq_, int(body.size()));

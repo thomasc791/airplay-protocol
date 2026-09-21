@@ -49,13 +49,13 @@ private:
   void read_trailer(char *input, size_t len);
   void read_offsets(char *plist);
 
-  pwVal read_dict(char *plist, const uint8_t markerOffset);
+  pwVal read_dict(char *plist, const size_t markerOffset);
 
   std::tuple<uint8_t, uint64_t> get_type_size(char *plist);
 
   // for dicts
   int get_key_value_indices(char *plist, dict_info_t &dInfo,
-                            const uint8_t markerOffset);
+                            const size_t markerOffset);
 
   uint64_t read_write_objects(char *plist, std::vector<uint64_t> locations,
                               std::vector<pwVal> &destination,
