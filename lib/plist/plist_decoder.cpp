@@ -18,7 +18,6 @@ pwVal PlistDecoder::decode(char *plist, size_t len) {
   u8Vec_t plistBytes(reinterpret_cast<const uint8_t *>(plist),
                      reinterpret_cast<const uint8_t *>(plist) + len);
 
-  std::cout << chars_to_hex(plistBytes) << std::endl;
   read_trailer(plist, len);
 
   read_offsets(plist);

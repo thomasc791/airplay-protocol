@@ -220,13 +220,6 @@ bool SRPHandler::validate_M1() {
 
   BN_bn2bin(M1_.get(), M1Bytes.data());
 
-  for (auto b : M1ExpectedBytes)
-    printf("%02x ", b);
-  std::cout << std::endl;
-  for (auto b : M1Bytes)
-    printf("%02x ", b);
-  std::cout << std::endl;
-
   return (M1ExpectedBytes == M1Bytes);
 }
 

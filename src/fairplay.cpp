@@ -78,7 +78,6 @@ void FairPlayWrapper::set_reply_message() {
 
 u8Vec_t FairPlayWrapper::get_reply_message() {
   u8Vec_t sap(default_sap + 124, default_sap + 254);
-  std::cout << chars_to_hex(sap) << std::endl;
   return replyMessage_[mode_];
 }
 

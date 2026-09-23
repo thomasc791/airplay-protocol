@@ -89,8 +89,6 @@ int SessionHandler::parse_message() {
   get_body();
 
   std::cout << request_ << std::endl;
-  std::cout << requestType_ << std::endl;
-  std::cout << title_ << std::endl;
 
   if ("/info RTSP/1.0" == title_) {
     rtsp_get_info();
@@ -109,6 +107,9 @@ int SessionHandler::parse_message() {
   } else if ("/command RTSP/1.0" == title_) {
     std::cout << "/command" << std::endl;
     rtsp_post_commands();
+  } else if ("/audioMode RTSP/1.0" == title_) {
+    std::cout << "/audioMode" << std::endl;
+    rtsp_post_audiomode();
   } else if ("SETUP" == requestType_) {
     std::cout << "SETUP" << std::endl;
     rtsp_setup();
@@ -121,9 +122,15 @@ int SessionHandler::parse_message() {
   } else if ("GET_PARAMETER" == requestType_) {
     std::cout << "GET_PARAMETER" << std::endl;
     rtsp_get_parameter();
+  } else if ("SET_PARAMETER" == requestType_) {
+    std::cout << "SET_PARAMETER" << std::endl;
+    rtsp_get_parameter();
   } else if ("SETPEERS" == requestType_) {
     std::cout << "SETPEERS" << std::endl;
     rtsp_set_peers();
+  } else if ("SETRATEANCHORTIME" == requestType_) {
+    std::cout << "SETRATEANCHORTIME" << std::endl;
+    rtsp_set_rate_anchortime();
   } else {
     std::cout << msg_ << std::endl;
     std::cout << "[RTSPParser] Unknown or encrypted message received! Lengte: "
@@ -133,10 +140,11 @@ int SessionHandler::parse_message() {
       printf("%02x ", (unsigned char)msg_[i]);
     }
     printf("\n");
+
+    rtsp_empty_message();
   }
   printf("\n");
   messageLength_ = 0;
-
   return 1;
 }
 
@@ -238,12 +246,6 @@ int SessionHandler::rtsp_post_pair_setup() {
   int header_len = create_header("application/octet-stream", body.size());
 
   std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
-
-  std::cout << header_ << std::endl;
-  for (uint8_t c : body)
-    std::cout << chars_to_hex(u8Vec_t{c}) << " ";
-
-  std::cout << std::endl;
 
   sendHeader_ = header_;
   sendHeaderLen_ = header_len;
@@ -584,9 +586,6 @@ int SessionHandler::rtsp_post_fp_setup() {
   auto fpState = vecBody[2];
   auto fpMode = vecBody[10];
 
-  std::cout << chars_to_hex(fpBody) << std::endl;
-  std::cout << "State: M" << (int)fpState << std::endl;
-
   switch (fpState) {
   case (0x01):
     fairPlayWrapper_->set_mode(fpMode);
@@ -603,9 +602,6 @@ int SessionHandler::rtsp_post_fp_setup() {
   sendHeaderLen_ = header_len;
   sendHeader_ = header_;
   sendBody_ = body;
-
-  std::cout << header_ << std::endl;
-  std::cout << chars_to_hex(body) << std::endl;
 
   return 1;
 }
@@ -628,9 +624,6 @@ int SessionHandler::rtsp_setup() {
   sendHeaderLen_ = header_len;
   sendHeader_ = header_;
   sendBody_ = body;
-
-  std::cout << header_ << std::endl;
-  std::cout << chars_to_hex(body) << std::endl;
 
   return 1;
 }
@@ -668,15 +661,18 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
     body = rtsp_setup_m2(dictionary);
   } else if (streamType == 103 || plistDecoder_->has_key(dictionary, "shk")) {
 
+    audioDataHandler_ = create_audio_handler();
+    audioDataHandler_->start();
+
     audioControlHandler_ = create_audio_control_handler();
     audioControlHandler_->start();
 
-    pwVal::Dict streamDict;
-    streamDict.push_back({"type", pwVal::uint(103)});
-    streamDict.push_back(
-        {"dataPort", pwVal::uint(audioDataHandler_->get_port())});
-    streamDict.push_back(
-        {"controlPort", pwVal::uint(audioControlHandler_->get_port())});
+    pwVal::Dict streamDict(
+        {{"type", pwVal::uint(103)},
+         {"dataPort", pwVal::uint(audioDataHandler_->get_port())},
+         {"audioBufferSize", pwVal::uint(0x800000)},
+         {"streamID", pwVal::uint(0x000001)},
+         {"controlPort", pwVal::uint(audioControlHandler_->get_port())}});
 
     pwVal::Array streamsArray;
     streamsArray.push_back(pwVal::dict(streamDict));
@@ -692,14 +688,14 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
 
 u8Vec_t SessionHandler::rtsp_setup_m2(pwVal::Dict dictionary) {
 
-  audioDataHandler_ = create_audio_handler();
-  audioDataHandler_->start();
+  audioControlHandler_ = create_audio_control_handler();
+  audioControlHandler_->start();
 
   pwVal::Dict streamDict;
 
   streamDict.push_back({"type", pwVal::uint(130)});
   streamDict.push_back(
-      {"dataPort", pwVal::uint(audioDataHandler_->get_port())});
+      {"dataPort", pwVal::uint(audioControlHandler_->get_port())});
 
   pwVal::Array streamsArray;
   streamsArray.push_back(pwVal::dict(streamDict));
@@ -723,22 +719,25 @@ u8Vec_t SessionHandler::rtsp_setup_m3(pwVal::Dict dictionary) {
 int SessionHandler::rtsp_record() {
   u8Vec_t body = {};
 
-  int header_len =
-      create_header("application/x-apple-binary-plist", body.size());
+  int header_len = snprintf(header_, sizeof(header_),
+                            "RTSP/1.0 200 OK\r\n"
+                            "CSeq: %d\r\n"
+                            "Audio-Latency: 0\r\n"
+                            "Server: AirTunes/366.0\r\n"
+                            "Content-Length: 0\r\n\r\n",
+                            CSeq_);
 
   sendHeaderLen_ = header_len;
   sendHeader_ = header_;
   sendBody_ = body;
 
-  std::cout << header_ << std::endl;
-  std::cout << chars_to_hex(body) << std::endl;
-
   return 1;
 }
 
 int SessionHandler::rtsp_post_feedback() { return rtsp_empty_message(); }
-
+int SessionHandler::rtsp_post_audiomode() { return rtsp_empty_message(); }
 int SessionHandler::rtsp_set_peers() { return rtsp_empty_message(); }
+int SessionHandler::rtsp_set_rate_anchortime() { return rtsp_empty_message(); }
 
 int SessionHandler::rtsp_teardown() {
   rtsp_empty_message();
@@ -759,9 +758,6 @@ int SessionHandler::rtsp_get_parameter() {
   sendHeader_ = header_;
   sendBody_ = body;
 
-  std::cout << header_ << std::endl;
-  std::cout << chars_to_hex(body) << std::endl;
-
   return 1;
 }
 
@@ -773,9 +769,6 @@ int SessionHandler::rtsp_empty_message() {
   sendHeaderLen_ = header_len;
   sendHeader_ = header_;
   sendBody_ = body;
-
-  std::cout << header_ << std::endl;
-  std::cout << chars_to_hex(body) << std::endl;
 
   return 1;
 }
@@ -872,7 +865,6 @@ int SessionHandler::get_body() {
   int remaining = contentLength_ - bodyRead;
 
   std::string msgHeader(msg_, headerLength);
-  std::cout << msgHeader << std::endl;
 
   if (remaining < 0)
     return -1;

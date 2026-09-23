@@ -11,44 +11,47 @@ SocketResource::SocketResource(__socket_type socketType, uint64_t port)
     : fd_(-1), socketType_(socketType), port_(port) {}
 
 SocketResource::~SocketResource() {
+  running_ = false;
   stop();
   log_event(tag_, "Deleting socket.");
 }
 
 bool SocketResource::start(std::string tag) {
   tag_ = tag;
-
   running_ = true;
-  fd_ = socket(AF_INET, socketType_, 0);
-  if (fd_ < 0) {
-    std::cerr << "[" << tag << "] Socket creation failed!" << std::endl;
+
+  int fd = socket(AF_INET6, socketType_, 0);
+  if (fd < 0)
+    return false;
+
+  int opt_reuse = 1;
+  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt_reuse, sizeof(opt_reuse));
+
+  // Force the socket to be Dual-Stack (Accept IPv4 and IPv6)
+  int opt_v6only = 0;
+  if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &opt_v6only,
+                 sizeof(opt_v6only)) < 0) {
+    std::cerr << "[" << tag_ << "] Warning: Could not disable IPV6_V6ONLY"
+              << std::endl;
+  }
+  sockaddr_in6 address{};
+  address.sin6_family = AF_INET6;
+  address.sin6_addr = in6addr_any;
+  address.sin6_port = htons(port_);
+
+  if (bind(fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+    close(fd);
     return false;
   }
 
-  int opt = 1;
-  setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-  sockaddr_in address{};
-  address.sin_family = AF_INET;
-  address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port = htons(port_);
-
-  if (bind(fd_, (struct sockaddr *)&address, sizeof(address)) < 0) {
-    std::cerr << "[" << tag << "] Bind failed!" << std::endl;
-    close(fd_);
-    running_ = false;
-    return false;
-  }
-
-  sockaddr_in assignedAddress{};
+  sockaddr_in6 assignedAddress{};
   socklen_t addressLen = sizeof(assignedAddress);
-
-  if (getsockname(fd_, (struct sockaddr *)&assignedAddress, &addressLen) == 0) {
-    port_ = ntohs(assignedAddress.sin_port);
+  if (getsockname(fd, (struct sockaddr *)&assignedAddress, &addressLen) == 0) {
+    port_ = ntohs(assignedAddress.sin6_port);
   }
 
   running_ = true;
-
+  fd_ = fd;
   return true;
 }
 
@@ -66,6 +69,17 @@ TCPServer::TCPServer(std::function<void(int)> handler, std::string tag,
   socket_ = std::make_unique<SocketResource>(SOCK_STREAM, port);
 }
 
+TCPServer::~TCPServer() {
+  if (socket_) {
+    socket_.reset();
+  }
+
+  // 2. Wait for the background thread to safely exit
+  if (loopThread_.joinable()) {
+    loopThread_.join();
+  }
+}
+
 bool TCPServer::start() {
   socket_->start(tag_);
   fd_ = socket_->get_fd();
@@ -80,10 +94,12 @@ bool TCPServer::start() {
   std::cout << "[" << tag_ << "] Listening for iOS connections on port "
             << std::dec << int(socket_->get_port()) << "..." << std::endl;
 
-  std::thread([this]() { server_loop(); }).detach();
+  loopThread_ = std::thread([this]() { server_loop(); });
+  loopThread_.detach();
 
   return true;
 }
+
 void TCPServer::server_loop() {
   while (socket_->is_running()) {
     sockaddr_in client_addr{};

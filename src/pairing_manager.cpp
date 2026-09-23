@@ -97,10 +97,6 @@ void PairingManager::add_paired_device(
 std::tuple<bool, std::vector<uint8_t>>
 PairingManager::get_device_key(std::vector<uint8_t> identifier) {
 
-  for (auto [k, v] : pairingMap_) {
-    std::cout << chars_to_hex(k) << std::endl;
-  }
-
   if (pairingMap_.count(identifier))
     return {true, pairingMap_[identifier]};
 

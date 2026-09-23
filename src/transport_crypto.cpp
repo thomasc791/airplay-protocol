@@ -125,7 +125,7 @@ EncryptionResult CipherTransporter::encrypt(u8Vec_t payload, u8Vec_t aad,
                             result.tag.data());
 
   if (err <= 0) {
-    std::cerr << "Error decrypting message" << std::endl;
+    std::cerr << "Error encrypting message" << std::endl;
     return result;
   }
 

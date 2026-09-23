@@ -1,4 +1,5 @@
 #include "audio_control.hpp"
+#include "crypto.hpp"
 #include "utils.hpp"
 
 #include <memory>
@@ -6,8 +7,10 @@
 constexpr std::string tag = "EventHandler";
 
 AudioControlHandler::AudioControlHandler() {
-  auto callback = [this](int id) { this->handle_events(id); };
-  listener_ = std::make_unique<TCPServer>(callback, "AudioControlHandler", 0);
+  auto callback = [this](const char *data, size_t length, sockaddr_in sender) {
+    this->handle_controls(data, length, sender);
+  };
+  listener_ = std::make_unique<UDPServer>(callback, "AudioControlHandler", 0);
 }
 
 AudioControlHandler::~AudioControlHandler() {
@@ -17,8 +20,10 @@ AudioControlHandler::~AudioControlHandler() {
 
 void AudioControlHandler::start() { listener_->start(); };
 
-void AudioControlHandler::handle_events(int id) {
+void AudioControlHandler::handle_controls(const char *data, size_t length,
+                                          sockaddr_in sender) {
   running_ = listener_->is_running();
+
   while (running_) {
   }
 }

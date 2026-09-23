@@ -61,7 +61,7 @@ private:
   std::unique_ptr<FairPlayWrapper> fairPlayWrapper_;
   std::unique_ptr<PTPTimingHandler> ptpHandler_;
   std::unique_ptr<EventHandler> eventHandler_;
-  std::unique_ptr<AudioHandler> audioDataHandler_;
+  std::unique_ptr<AudioDataHandler> audioDataHandler_;
   std::unique_ptr<AudioControlHandler> audioControlHandler_;
 
   int get_content_length();
@@ -107,6 +107,8 @@ private:
   int rtsp_record();
   int rtsp_get_parameter();
   int rtsp_set_peers();
+  int rtsp_post_audiomode();
+  int rtsp_set_rate_anchortime();
   int rtsp_teardown();
 
   int rtsp_empty_message();

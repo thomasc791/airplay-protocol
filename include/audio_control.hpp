@@ -16,10 +16,10 @@ public:
   void start();
 
 private:
-  std::unique_ptr<TCPServer> listener_;
+  std::unique_ptr<UDPServer> listener_;
   std::atomic<bool> running_{false};
 
-  void handle_events(int clientID);
+  void handle_controls(const char *data, size_t length, sockaddr_in sender);
 };
 
 std::unique_ptr<AudioControlHandler> create_audio_control_handler();
