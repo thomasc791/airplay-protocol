@@ -3,6 +3,7 @@
 #include "flags.hpp"
 #include "hal/mdns_service.hpp"
 #include "pairing_manager.hpp"
+#include "socket.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -17,10 +18,12 @@ private:
   std::string deviceID_, pi_;
   std::atomic<bool> running_{false};
   std::thread server_thread_;
+
   std::unique_ptr<IMDnsService> mdns_;
   std::shared_ptr<FeatureFlags> featureFlags_;
   std::shared_ptr<StatusFlags> statusFlags_;
   std::shared_ptr<PairingManager> pairingManager_;
+  std::unique_ptr<TCPServer> airplayServer_;
 
   int create_airplay_service();
   int publish_airplay_service();

@@ -1,7 +1,10 @@
 #include "rtsp.hpp"
 
+#include "audio_control.hpp"
+#include "audio_stream.hpp"
 #include "crypto.hpp"
 #include "pairing_manager.hpp"
+#include "plist_decoder.hpp"
 #include "plist_encoder.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
@@ -10,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ios>
 #include <iostream>
 #include <memory>
 #include <ostream>
@@ -18,13 +22,16 @@
 #include <utility>
 #include <vector>
 
-RTSPParser::RTSPParser(int client_fd, std::string macAddress, std::string pi,
-                       std::shared_ptr<FeatureFlags> featureFlags,
-                       std::shared_ptr<StatusFlags> statusFlags,
-                       std::shared_ptr<PairingManager> pairingManager)
-    : clientID_(client_fd), contentLength_(), CSeq_(), bodyBuffer_(nullptr),
-      msg_(nullptr), macAddress_(macAddress), pi_(pi), header{},
-      featureFlags_(featureFlags), statusFlags_(statusFlags),
+constexpr std::string tag = "SessionHandler";
+
+SessionHandler::SessionHandler(int client_fd, std::string macAddress,
+                               std::string pi,
+                               std::shared_ptr<FeatureFlags> featureFlags,
+                               std::shared_ptr<StatusFlags> statusFlags,
+                               std::shared_ptr<PairingManager> pairingManager)
+    : running_{true}, clientID_(client_fd), contentLength_(), CSeq_(),
+      bodyBuffer_(nullptr), msg_(nullptr), macAddress_(macAddress), pi_(pi),
+      header_{}, featureFlags_(featureFlags), statusFlags_(statusFlags),
       pairingManager_(pairingManager) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
@@ -37,21 +44,39 @@ RTSPParser::RTSPParser(int client_fd, std::string macAddress, std::string pi,
   srpHandler_ = create_srp_handler();
 }
 
-RTSPParser::~RTSPParser() { free(bodyBuffer_); }
+SessionHandler::~SessionHandler() {
+  free(bodyBuffer_);
+  plistEncoder_.reset();
+  plistDecoder_.reset();
+  srpHandler_.reset();
+  cryptoHandler_.reset();
+  featureFlags_.reset();
+  statusFlags_.reset();
+  tlv8Decoder_.reset();
+  tlv8Encoder_.reset();
+  pairingManager_.reset();
+  fairPlayWrapper_.reset();
+  ptpHandler_.reset();
+  eventHandler_.reset();
+  audioDataHandler_.reset();
+  audioControlHandler_.reset();
 
-int RTSPParser::set_client(int currentClient) {
+  log_event(tag, "Deleting handler.");
+}
+
+int SessionHandler::set_client(int currentClient) {
   clientID_ = currentClient;
   return 1;
 }
 
-int RTSPParser::set_msg(char *tcpMessage, int len) {
+int SessionHandler::set_msg(char *tcpMessage, int len) {
   // ESP_LOGI(TAG, "Set message with length: %d", len);
   msg_ = tcpMessage;
   messageLength_ = len;
   return 1;
 }
 
-int RTSPParser::parse_message() {
+int SessionHandler::parse_message() {
   msg_[messageLength_] = '\0';
 
   reset_state();
@@ -69,18 +94,36 @@ int RTSPParser::parse_message() {
 
   if ("/info RTSP/1.0" == title_) {
     rtsp_get_info();
-  } else if ("/pair-verify RTSP/1.0" == title_) {
-    std::cout << "/pair-verify" << std::endl;
-    rtsp_post_pair_verify();
   } else if ("/pair-setup RTSP/1.0" == title_) {
     std::cout << "/pair-setup" << std::endl;
     rtsp_post_pair_setup();
+  } else if ("/pair-verify RTSP/1.0" == title_) {
+    std::cout << "/pair-verify" << std::endl;
+    rtsp_post_pair_verify();
   } else if ("/fp-setup RTSP/1.0" == title_) {
     std::cout << "/fp-setup" << std::endl;
     rtsp_post_fp_setup();
+  } else if ("/feedback RTSP/1.0" == title_) {
+    std::cout << "/feedback" << std::endl;
+    rtsp_post_feedback();
+  } else if ("/command RTSP/1.0" == title_) {
+    std::cout << "/command" << std::endl;
+    rtsp_post_commands();
   } else if ("SETUP" == requestType_) {
     std::cout << "SETUP" << std::endl;
     rtsp_setup();
+  } else if ("TEARDOWN" == requestType_) {
+    std::cout << "TEARDOWN" << std::endl;
+    rtsp_teardown();
+  } else if ("RECORD" == requestType_) {
+    std::cout << "RECORD" << std::endl;
+    rtsp_record();
+  } else if ("GET_PARAMETER" == requestType_) {
+    std::cout << "GET_PARAMETER" << std::endl;
+    rtsp_get_parameter();
+  } else if ("SETPEERS" == requestType_) {
+    std::cout << "SETPEERS" << std::endl;
+    rtsp_set_peers();
   } else {
     std::cout << msg_ << std::endl;
     std::cout << "[RTSPParser] Unknown or encrypted message received! Lengte: "
@@ -97,18 +140,18 @@ int RTSPParser::parse_message() {
   return 1;
 }
 
-std::tuple<std::string, u8Vec_t> RTSPParser::get_response() {
+std::tuple<std::string, u8Vec_t> SessionHandler::get_response() {
   return {sendHeader_, sendBody_};
 }
 
-int RTSPParser::reset_state() {
+int SessionHandler::reset_state() {
   CSeq_ = -1;
   contentLength_ = -1;
 
   return 1;
 }
 
-u8Vec_t RTSPParser::create_plist() {
+u8Vec_t SessionHandler::create_plist() {
   using V = PlistEncoder::Value;
 
   auto plist = plistEncoder_->serialize(V::dict({
@@ -132,19 +175,20 @@ u8Vec_t RTSPParser::create_plist() {
   return plist;
 }
 
-int RTSPParser::rtsp_get_info() {
+int SessionHandler::rtsp_get_info() {
   u8Vec_t plist = create_plist();
 
-  int header_len = create_header("x-apple-binary-plist", plist.size());
+  int header_len =
+      create_header("application/x-apple-binary-plist", plist.size());
 
-  sendHeader_ = header;
+  sendHeader_ = header_;
   sendHeaderLen_ = header_len;
   sendBody_ = plist;
 
   return 1;
 }
 
-int RTSPParser::rtsp_post_pair_setup() {
+int SessionHandler::rtsp_post_pair_setup() {
   tlv8Decoder_->reinterpret_message((const char *)body_, contentLength_);
   tlv8Decoder_->decode();
   auto tlv8State = tlv8Decoder_->read_message(TLV8_STATE);
@@ -191,17 +235,17 @@ int RTSPParser::rtsp_post_pair_setup() {
 
   body = tlv8Encoder_->get_body();
 
-  int header_len = create_header("octet-stream", body.size());
+  int header_len = create_header("application/octet-stream", body.size());
 
   std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
 
-  std::cout << header << std::endl;
+  std::cout << header_ << std::endl;
   for (uint8_t c : body)
     std::cout << chars_to_hex(u8Vec_t{c}) << " ";
 
   std::cout << std::endl;
 
-  sendHeader_ = header;
+  sendHeader_ = header_;
   sendHeaderLen_ = header_len;
   sendBody_ = body;
 
@@ -213,7 +257,7 @@ int RTSPParser::rtsp_post_pair_setup() {
   return 1;
 };
 
-int RTSPParser::pair_setup_m2() {
+int SessionHandler::pair_setup_m2() {
   std::vector<std::pair<TLV8Type_t, u8Vec_t>> messageMap = {
       {TLV8_STATE, {0x02}},
       {TLV8_SALT, srpHandler_->get_salt()},
@@ -229,7 +273,7 @@ int RTSPParser::pair_setup_m2() {
   return 1;
 }
 
-int RTSPParser::pair_setup_m4() {
+int SessionHandler::pair_setup_m4() {
   int err = srpHandler_->set_A(tlv8Decoder_->read_message(TLV8_PK));
   err = srpHandler_->set_M1(tlv8Decoder_->read_message(TLV8_PROOF));
   if (err <= 0) {
@@ -273,7 +317,7 @@ int RTSPParser::pair_setup_m4() {
   return err;
 }
 
-int RTSPParser::pair_setup_m5() {
+int SessionHandler::pair_setup_m5() {
   int err;
   u8Vec_t hkdfKey =
       hkdf_sha512("Pair-Setup-Encrypt-Salt", "Pair-Setup-Encrypt-Info",
@@ -323,7 +367,7 @@ int RTSPParser::pair_setup_m5() {
   return err;
 }
 
-int RTSPParser::pair_setup_m6() {
+int SessionHandler::pair_setup_m6() {
   int err;
   auto hkdfKey = hkdf_sha512("Pair-Setup-Accessory-Sign-Salt",
                              "Pair-Setup-Accessory-Sign-Info",
@@ -361,7 +405,7 @@ int RTSPParser::pair_setup_m6() {
   return err;
 }
 
-int RTSPParser::rtsp_post_pair_verify() {
+int SessionHandler::rtsp_post_pair_verify() {
   tlv8Decoder_->reinterpret_message((const char *)body_, contentLength_);
   tlv8Decoder_->decode();
   auto tlv8State = tlv8Decoder_->read_message(TLV8_STATE);
@@ -414,12 +458,12 @@ int RTSPParser::rtsp_post_pair_verify() {
 
   body = tlv8Encoder_->get_body();
 
-  int header_len = create_header("octet-stream", body.size());
+  int header_len = create_header("application/octet-stream", body.size());
 
   std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
 
   sendHeaderLen_ = header_len;
-  sendHeader_ = header;
+  sendHeader_ = header_;
   sendBody_ = body;
 
   if (err <= 0) {
@@ -430,7 +474,7 @@ int RTSPParser::rtsp_post_pair_verify() {
   return 1;
 };
 
-int RTSPParser::pair_verify_m2() {
+int SessionHandler::pair_verify_m2() {
   cryptoHandler_->generate_ephemeral_key();
   cryptoHandler_->set_client_ephemeral_pub(tlv8Decoder_->read_message(TLV8_PK));
   cryptoHandler_->calculate_shared_key();
@@ -472,7 +516,7 @@ int RTSPParser::pair_verify_m2() {
   return 1;
 }
 
-int RTSPParser::pair_verify_m3() {
+int SessionHandler::pair_verify_m3() {
   int err = cryptoHandler_->set_nonce("PV-Msg03");
   auto [cipher, tag] =
       get_cipher_tag(tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
@@ -511,7 +555,7 @@ int RTSPParser::pair_verify_m3() {
   return err;
 }
 
-int RTSPParser::pair_verify_m4() {
+int SessionHandler::pair_verify_m4() {
   std::vector<std::pair<TLV8Type_t, u8Vec_t>> messageMap = {
       {TLV8_STATE, {0x04}}};
 
@@ -521,7 +565,7 @@ int RTSPParser::pair_verify_m4() {
   return 1;
 }
 
-int RTSPParser::rtsp_post_fp_setup() {
+int SessionHandler::rtsp_post_fp_setup() {
   if (!fairPlayWrapper_)
     fairPlayWrapper_ = create_fp_wrapper();
 
@@ -554,24 +598,45 @@ int RTSPParser::rtsp_post_fp_setup() {
     break;
   }
 
-  int header_len = create_header("octet-stream", body.size());
+  int header_len = create_header("application/octet-stream", body.size());
 
   sendHeaderLen_ = header_len;
-  sendHeader_ = header;
+  sendHeader_ = header_;
   sendBody_ = body;
 
-  std::cout << header << std::endl;
+  std::cout << header_ << std::endl;
   std::cout << chars_to_hex(body) << std::endl;
 
   return 1;
 }
 
-int RTSPParser::rtsp_setup() {
-  using V = PlistEncoder::Value;
+int SessionHandler::rtsp_setup() {
   u8Vec_t body;
 
   std::cout << "Decoding RTSP Setup BPlist" << std::endl;
-  plistDecoder_->decode(body_, contentLength_);
+  auto dictionary = plistDecoder_->decode(body_, contentLength_).dictVal;
+
+  if (!plistDecoder_->has_key(dictionary, "streams")) {
+    body = rtsp_setup_m1(dictionary);
+  } else {
+    body = rtsp_setup_media_stream(dictionary);
+  }
+
+  int header_len =
+      create_header("application/x-apple-binary-plist", body.size());
+
+  sendHeaderLen_ = header_len;
+  sendHeader_ = header_;
+  sendBody_ = body;
+
+  std::cout << header_ << std::endl;
+  std::cout << chars_to_hex(body) << std::endl;
+
+  return 1;
+}
+
+u8Vec_t SessionHandler::rtsp_setup_m1(pwVal::Dict dictionary) {
+  using V = PlistEncoder::Value;
 
   ptpHandler_ = create_ptp_timing_handler();
   eventHandler_ = create_event_handler();
@@ -583,31 +648,149 @@ int RTSPParser::rtsp_setup() {
       V::dict({{"timingPort", pwVal::uint(ptpHandler_->get_port())},
                {"eventPort", pwVal::uint(eventHandler_->get_port())}}));
 
-  body = bplistPayload;
+  return bplistPayload;
+}
 
-  int header_len = create_header("x-apple-binary-plist", body.size());
+u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
+  using V = PlistEncoder::Value;
+  u8Vec_t body = {};
+
+  auto streams = plistDecoder_->get(dictionary, "streams");
+
+  auto streamType =
+      plistDecoder_->get(streams.arrayVal[0].dictVal, "type").uintVal;
+
+  std::cout << "Stream type: " << streamType << std::endl;
+
+  if (streamType == 130) {
+    body = rtsp_setup_m2(dictionary);
+  } else if (streamType == 96 || plistDecoder_->has_key(dictionary, "ekey")) {
+    body = rtsp_setup_m2(dictionary);
+  } else if (streamType == 103 || plistDecoder_->has_key(dictionary, "shk")) {
+
+    audioControlHandler_ = create_audio_control_handler();
+    audioControlHandler_->start();
+
+    pwVal::Dict streamDict;
+    streamDict.push_back({"type", pwVal::uint(103)});
+    streamDict.push_back(
+        {"dataPort", pwVal::uint(audioDataHandler_->get_port())});
+    streamDict.push_back(
+        {"controlPort", pwVal::uint(audioControlHandler_->get_port())});
+
+    pwVal::Array streamsArray;
+    streamsArray.push_back(pwVal::dict(streamDict));
+
+    pwVal::Dict rootDict;
+    rootDict.push_back({"streams", pwVal::array(streamsArray)});
+
+    body = plistEncoder_->serialize(pwVal::dict(rootDict));
+  }
+
+  return body;
+}
+
+u8Vec_t SessionHandler::rtsp_setup_m2(pwVal::Dict dictionary) {
+
+  audioDataHandler_ = create_audio_handler();
+  audioDataHandler_->start();
+
+  pwVal::Dict streamDict;
+
+  streamDict.push_back({"type", pwVal::uint(130)});
+  streamDict.push_back(
+      {"dataPort", pwVal::uint(audioDataHandler_->get_port())});
+
+  pwVal::Array streamsArray;
+  streamsArray.push_back(pwVal::dict(streamDict));
+
+  pwVal::Dict rootDict;
+  rootDict.push_back({"streams", pwVal::array(streamsArray)});
+
+  return plistEncoder_->serialize(pwVal::dict(rootDict));
+}
+
+u8Vec_t SessionHandler::rtsp_setup_m3(pwVal::Dict dictionary) {
+  using V = PlistEncoder::Value;
+
+  std::vector<uint8_t> bplistPayload = plistEncoder_->serialize(
+      V::dict({{"timingPort", pwVal::uint(ptpHandler_->get_port())},
+               {"eventPort", pwVal::uint(eventHandler_->get_port())}}));
+
+  return bplistPayload;
+}
+
+int SessionHandler::rtsp_record() {
+  u8Vec_t body = {};
+
+  int header_len =
+      create_header("application/x-apple-binary-plist", body.size());
 
   sendHeaderLen_ = header_len;
-  sendHeader_ = header;
+  sendHeader_ = header_;
   sendBody_ = body;
 
-  std::cout << header << std::endl;
+  std::cout << header_ << std::endl;
   std::cout << chars_to_hex(body) << std::endl;
 
   return 1;
 }
 
-u8Vec_t RTSPParser::fp3_setup_m2() {
+int SessionHandler::rtsp_post_feedback() { return rtsp_empty_message(); }
+
+int SessionHandler::rtsp_set_peers() { return rtsp_empty_message(); }
+
+int SessionHandler::rtsp_teardown() {
+  rtsp_empty_message();
+  running_ = false;
+
+  return 1;
+}
+
+int SessionHandler::rtsp_post_commands() { return rtsp_empty_message(); }
+
+int SessionHandler::rtsp_get_parameter() {
+  std::string volume = "volume: 0.000000\r\n";
+  u8Vec_t body(volume.begin(), volume.end());
+
+  int header_len = create_header("text/parameters", body.size());
+
+  sendHeaderLen_ = header_len;
+  sendHeader_ = header_;
+  sendBody_ = body;
+
+  std::cout << header_ << std::endl;
+  std::cout << chars_to_hex(body) << std::endl;
+
+  return 1;
+}
+
+int SessionHandler::rtsp_empty_message() {
+  u8Vec_t body = {};
+
+  int header_len = create_header();
+
+  sendHeaderLen_ = header_len;
+  sendHeader_ = header_;
+  sendBody_ = body;
+
+  std::cout << header_ << std::endl;
+  std::cout << chars_to_hex(body) << std::endl;
+
+  return 1;
+}
+
+u8Vec_t SessionHandler::fp3_setup_m2() {
   return fairPlayWrapper_->get_reply_message();
 }
 
-u8Vec_t RTSPParser::fp3_setup_m3() {
+u8Vec_t SessionHandler::fp3_setup_m3() {
   fairPlayWrapper_->set_key_msg(body_);
 
   return {};
 }
 
-u8Vec_t RTSPParser::fp3_setup_m4() {
+u8Vec_t SessionHandler::fp3_setup_m4() {
   u8Vec_t body;
   auto fpReplyHeader = fairPlayWrapper_->get_reply_header();
   body.insert(body.begin(), fpReplyHeader.begin(), fpReplyHeader.end());
@@ -616,20 +799,20 @@ u8Vec_t RTSPParser::fp3_setup_m4() {
   return body;
 }
 
-int RTSPParser::rtsp_post_pair_error() {
+int SessionHandler::rtsp_post_pair_error() {
   u8Vec_t tlv = {0x06, 0x01, 0x02,  // State = M2
                  0x07, 0x01, 0x02}; // Error = Authentication
 
-  int header_len = create_header("octet-stream", sizeof(tlv));
+  int header_len = create_header("application/octet-stream", sizeof(tlv));
 
-  sendHeader_ = header;
+  sendHeader_ = header_;
   sendHeaderLen_ = header_len;
   sendBody_ = tlv;
 
   return 1;
 }
 
-int RTSPParser::get_cseq() {
+int SessionHandler::get_cseq() {
   const char *cseq = strstr(msg_, "CSeq:");
 
   if (!cseq)
@@ -639,7 +822,7 @@ int RTSPParser::get_cseq() {
   return 1;
 }
 
-int RTSPParser::get_content_length() {
+int SessionHandler::get_content_length() {
   const char *len = strstr(msg_, "Content-Length:");
 
   if (!len)
@@ -650,7 +833,7 @@ int RTSPParser::get_content_length() {
   return 1;
 }
 
-int RTSPParser::get_req() {
+int SessionHandler::get_req() {
   const char *request = strstr(msg_, "\r\n");
   if (!request)
     return -1;
@@ -660,7 +843,7 @@ int RTSPParser::get_req() {
   return 1;
 }
 
-int RTSPParser::get_req_type() {
+int SessionHandler::get_req_type() {
   std::string::size_type n = request_.find(" ");
   if (std::string::npos == n)
     return -1;
@@ -669,7 +852,7 @@ int RTSPParser::get_req_type() {
   return 1;
 }
 
-int RTSPParser::get_title() {
+int SessionHandler::get_title() {
   std::string::size_type n = request_.find("/");
   if (std::string::npos == n)
     return -1;
@@ -678,7 +861,7 @@ int RTSPParser::get_title() {
   return 1;
 }
 
-int RTSPParser::get_body() {
+int SessionHandler::get_body() {
   body_ = strstr(msg_, "\r\n\r\n");
   if (!body_)
     return -1;
@@ -713,26 +896,37 @@ int RTSPParser::get_body() {
   return 1;
 }
 
-u8Vec_t RTSPParser::get_shared_key() {
+u8Vec_t SessionHandler::get_shared_key() {
   return cryptoHandler_->get_shared_key();
 }
 
-int RTSPParser::create_header(std::string applicationType, size_t plistSize) {
-  return snprintf(header, sizeof(header),
+int SessionHandler::create_header(std::string applicationType,
+                                  size_t plistSize) {
+  return snprintf(header_, sizeof(header_),
                   "RTSP/1.0 200 OK\r\n"
                   "CSeq: %d\r\n"
                   "Server: AirTunes/366.0\r\n"
-                  "Content-Type: application/%s\r\n"
+                  "Content-Type: %s\r\n"
                   "Content-Length: %d\r\n"
                   "\r\n",
                   CSeq_, applicationType.c_str(), (int)plistSize);
 }
 
-std::shared_ptr<RTSPParser>
+int SessionHandler::create_header() {
+  return snprintf(header_, sizeof(header_),
+                  "RTSP/1.0 200 OK\r\n"
+                  "CSeq: %d\r\n"
+                  "Server: AirTunes/366.0\r\n"
+                  "Content-Length: 0\r\n"
+                  "\r\n",
+                  CSeq_);
+}
+
+std::shared_ptr<SessionHandler>
 create_rtsp_parser(int clientID, std::string macAddress, std::string pi,
                    std::shared_ptr<FeatureFlags> featureFlags,
                    std::shared_ptr<StatusFlags> statusFlags,
                    std::shared_ptr<PairingManager> pairingManager) {
-  return std::make_shared<RTSPParser>(clientID, macAddress, pi, featureFlags,
-                                      statusFlags, pairingManager);
+  return std::make_shared<SessionHandler>(
+      clientID, macAddress, pi, featureFlags, statusFlags, pairingManager);
 }

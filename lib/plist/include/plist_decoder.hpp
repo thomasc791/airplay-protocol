@@ -13,8 +13,10 @@ public:
   PlistDecoder();
   ~PlistDecoder();
 
-  u8Vec_t decode(char *plist, size_t len);
+  pwVal decode(char *plist, size_t len);
   u8Vec_t serialize(const pwVal &root);
+  static bool has_key(pwVal::Dict dictionary, const std::string key);
+  static pwVal get(pwVal::Dict dictionary, const std::string key);
 
 private:
   struct trailer_t {
@@ -45,7 +47,6 @@ private:
   size_t flatten_value(const pwVal &val);
   void write_uint_bytes(uint64_t val, uint8_t numBytes);
   void write_counted_tag(uint8_t baseTag, size_t count);
-  uint64_t maximum_value();
   void read_trailer(char *input, size_t len);
   void read_offsets(char *plist);
 
@@ -54,12 +55,11 @@ private:
   std::tuple<uint8_t, uint64_t> get_type_size(char *plist);
 
   // for dicts
-  int get_key_value_indices(char *plist, dict_info_t &dInfo,
-                            const size_t markerOffset);
+  void get_indices(char *plist, std::vector<uint64_t> &indices,
+                   std::vector<pwVal> &indexValues, size_t size);
 
   uint64_t read_write_objects(char *plist, std::vector<uint64_t> locations,
-                              std::vector<pwVal> &destination,
-                              size_t markerOffset);
+                              std::vector<pwVal> &destination);
   uint64_t read_values(char *plist);
   pwVal read_object(char *plist, const uint8_t type, const uint64_t size,
                     const size_t markerOffset);

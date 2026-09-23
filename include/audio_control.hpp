@@ -6,10 +6,10 @@
 #include <cstdint>
 #include <memory>
 
-class EventHandler {
+class AudioControlHandler {
 public:
-  EventHandler();
-  ~EventHandler();
+  AudioControlHandler();
+  ~AudioControlHandler();
 
   uint64_t get_port() { return listener_->get_port(); }
 
@@ -22,4 +22,4 @@ private:
   void handle_events(int clientID);
 };
 
-std::unique_ptr<EventHandler> create_event_handler();
+std::unique_ptr<AudioControlHandler> create_audio_control_handler();

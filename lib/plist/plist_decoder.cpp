@@ -7,11 +7,14 @@
 #include <iostream>
 #include <ranges>
 #include <tuple>
+#include <vector>
+
+constexpr std::string tag = "PlistDecoder";
 
 PlistDecoder::PlistDecoder() = default;
-PlistDecoder::~PlistDecoder() = default;
+PlistDecoder::~PlistDecoder() { log_event(tag, "Deleting decoder."); };
 
-u8Vec_t PlistDecoder::decode(char *plist, size_t len) {
+pwVal PlistDecoder::decode(char *plist, size_t len) {
   u8Vec_t plistBytes(reinterpret_cast<const uint8_t *>(plist),
                      reinterpret_cast<const uint8_t *>(plist) + len);
 
@@ -22,12 +25,7 @@ u8Vec_t PlistDecoder::decode(char *plist, size_t len) {
 
   uint64_t rootOffset = offsets_[info_.topObject];
 
-  pwVal dictionary = read_dict(plist, rootOffset);
-
-  for (auto e : dictionary.dictVal)
-    std::cout << e.key << std::endl << e.value.stringVal << std::endl;
-
-  return {};
+  return read_dict(plist, rootOffset);
 }
 
 void PlistDecoder::read_trailer(char *input, size_t len) {
@@ -55,36 +53,22 @@ void PlistDecoder::read_offsets(char *plist) {
   }
 }
 
-int PlistDecoder::get_key_value_indices(char *plist, dict_info_t &dInfo,
-                                        const size_t markerOffset) {
-  pointer_ = markerOffset;
+void PlistDecoder::get_indices(char *plist, std::vector<uint64_t> &indices,
+                               std::vector<pwVal> &indexValues, size_t size) {
 
-  auto [type, size] = get_type_size(plist);
+  indices.resize(size);
+  indexValues.resize(size);
 
-  dInfo.keyIndices.resize(size);
-  dInfo.keys.resize(size);
-  dInfo.valueIndices.resize(size);
-  dInfo.values.resize(size);
-
-  for (auto &key : dInfo.keyIndices) {
+  for (auto &key : indices) {
     key = 0;
     for (size_t i = 0; i < info_.objectRefSize; i++)
       key = (key << 8) | (uint8_t)plist[pointer_++];
   }
-
-  for (auto &value : dInfo.valueIndices) {
-    value = 0;
-    for (size_t i = 0; i < info_.objectRefSize; i++)
-      value = (value << 8) | (uint8_t)plist[pointer_++];
-  }
-
-  return 1;
 }
 
 uint64_t PlistDecoder::read_write_objects(char *plist,
                                           std::vector<uint64_t> locations,
-                                          std::vector<pwVal> &destination,
-                                          size_t markerOffset) {
+                                          std::vector<pwVal> &destination) {
   size_t i = 0;
   for (auto &key : locations) {
     pointer_ = offsets_[key];
@@ -128,13 +112,13 @@ pwVal PlistDecoder::read_object(char *plist, const uint8_t type,
     val = read_uint(plist, size);
     break;
   case 0x40:
-    val = read_string(plist, size);
+    val = read_data(plist, size);
     break;
   case 0x50:
     val = read_string(plist, size);
     break;
   case 0xA0:
-    val = read_array(plist, size);
+    val = read_array(plist, markerOffset);
     break;
   case 0xD0:
     val = read_dict(plist, markerOffset);
@@ -146,10 +130,14 @@ pwVal PlistDecoder::read_object(char *plist, const uint8_t type,
 pwVal PlistDecoder::read_dict(char *plist, const size_t markerOffset) {
   dict_info_t dInfo;
 
-  get_key_value_indices(plist, dInfo, markerOffset);
-  read_write_objects(plist, dInfo.keyIndices, dInfo.keys, markerOffset);
+  pointer_ = markerOffset;
+  auto [type, size] = get_type_size(plist);
 
-  read_write_objects(plist, dInfo.valueIndices, dInfo.values, markerOffset);
+  get_indices(plist, dInfo.keyIndices, dInfo.keys, size);
+  get_indices(plist, dInfo.valueIndices, dInfo.values, size);
+
+  read_write_objects(plist, dInfo.keyIndices, dInfo.keys);
+  read_write_objects(plist, dInfo.valueIndices, dInfo.values);
 
   pwVal::Dict dictionary(dInfo.keys.size());
   for (auto &&[e, k, v] :
@@ -179,32 +167,49 @@ pwVal PlistDecoder::read_string(char *plist, const size_t size) {
   return pwVal::string(std::string(data.begin(), data.end()));
 }
 
-pwVal PlistDecoder::read_array(char *plist, const size_t size) {
+pwVal PlistDecoder::read_array(char *plist, const size_t markerOffset) {
+  dict_info_t dInfo;
+
+  pointer_ = markerOffset;
+  auto [type, size] = get_type_size(plist);
+
+  get_indices(plist, dInfo.keyIndices, dInfo.keys, size);
+
+  read_write_objects(plist, dInfo.keyIndices, dInfo.keys);
+
+  return pwVal::array(dInfo.keys);
+}
+
+pwVal PlistDecoder::read_data(char *plist, const size_t size) {
   u8Vec_t data(size);
 
   for (auto &byte : data)
     byte = (uint8_t)plist[pointer_++];
 
-  return pwVal::string(std::string(data.begin(), data.end()));
+  return pwVal::data(data);
 }
 
-uint64_t PlistDecoder::maximum_value() {
-  uint64_t maxVal;
-  switch (info_.offsetIntSize) {
-  case 0x01:
-    maxVal = 0xFF;
-    break;
-  case 0x02:
-    maxVal = 0xFFFF;
-    break;
-  case 0x08:
-    maxVal = 0xFFFFFFFF;
-    break;
+bool PlistDecoder::has_key(pwVal::Dict dictionary, const std::string key) {
+  for (const auto &entry : dictionary) {
+    if (entry.key == key)
+      return true;
   }
-  return maxVal;
+
+  return false;
+}
+
+pwVal PlistDecoder::get(pwVal::Dict dictionary, const std::string key) {
+  for (const auto &entry : dictionary) {
+    if (entry.key == key)
+      return entry.value;
+  }
+
+  return pwVal();
 }
 
 void PlistDecoder::read_be64(uint64_t &dst, uint8_t *src) {
+  dst = 0;
+
   for (int i = 0; i < 8; i++)
     dst |= ((uint64_t)src[i] << ((7 - i) * 8));
 }

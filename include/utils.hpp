@@ -30,3 +30,5 @@ template <typename T> std::vector<uint8_t> lil_endian(T num) {
 }
 
 std::string remove_colon(std::string str);
+
+void log_event(const std::string tag, const std::string msg);

@@ -1,6 +1,8 @@
 #include "utils.hpp"
 
+#include <cstdlib>
 #include <ifaddrs.h>
+#include <iostream>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netpacket/packet.h>
@@ -80,3 +82,8 @@ std::string get_system_mac_address() {
 
   return mac_str.empty() ? "00:11:22:33:44:55" : "5C:5F:67:60:A3:16";
 }
+
+void log_event(const std::string tag, const std::string msg) {
+  std::cout << "\e[0;32m" << "[" << tag << "] ";
+  std::cout << "\e[0;37m" << msg << std::endl;
+};

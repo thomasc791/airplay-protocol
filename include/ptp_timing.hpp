@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tcp.hpp"
+#include "socket.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -12,12 +12,13 @@ public:
 
   uint64_t get_port() { return listener_->get_port(); }
 
-  bool start() { return listener_->start(0, "PTPTimingHandler"); };
+  void start();
 
 private:
-  std::unique_ptr<TcpListener> listener_;
+  std::unique_ptr<UDPServer> listener_;
+  std::atomic<bool> running_{false};
 
-  void handle_ptp_timing(int clientID);
+  void handle_ptp_timing(const char *data, size_t length, sockaddr_in sender);
 };
 
 std::unique_ptr<PTPTimingHandler> create_ptp_timing_handler();

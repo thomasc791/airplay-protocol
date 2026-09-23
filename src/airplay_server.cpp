@@ -3,7 +3,7 @@
 #include "flags.hpp"
 #include "pairing_manager.hpp"
 #include "rtsp.hpp"
-#include "tcp.hpp"
+#include "socket.hpp"
 #include "transport_crypto.hpp"
 #include "utils.hpp"
 
@@ -49,9 +49,10 @@ bool AirPlayServer::start() {
   auto callback = [this](int id) { this->handle_client(id); };
 
   running_ = true;
-  server_thread_ =
-      std::thread(&create_and_bind_socket, callback, "AirPlayServer", port_,
-                  std::ref(running_), nullptr);
+
+  airplayServer_ = std::make_unique<TCPServer>(callback, "AirPlayServer", 7000);
+  std::thread([this]() { airplayServer_->start(); }).detach();
+
   return true;
 }
 
@@ -117,7 +118,7 @@ void AirPlayServer::handle_client(int clientID) {
   std::unique_ptr<CipherTransporter> cipherTransporter;
 
   char buffer[2048] = {0};
-  while (running_) {
+  while (rtspParser->is_running()) {
     memset(buffer, 0, sizeof(buffer));
     ssize_t bytes_read = read(clientID, buffer, sizeof(buffer) - 1);
 
@@ -141,9 +142,6 @@ void AirPlayServer::handle_client(int clientID) {
     }
 
     if (cipherTransporter) {
-      auto declared = (uint8_t)buffer[0] | ((uint8_t)buffer[1] << 8);
-      std::cout << "read=" << bytes_read
-                << " frame_expects=" << declared + 2 + 16 << std::endl;
       auto decryptResult =
           cipherTransporter->decrypt_frames(buffer, bytes_read);
 
@@ -167,4 +165,5 @@ void AirPlayServer::handle_client(int clientID) {
     }
   }
   close(clientID);
+  running_ = false;
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "audio_control.hpp"
+#include "audio_stream.hpp"
 #include "crypto.hpp"
 #include "event.hpp"
 #include "fairplay.hpp"
@@ -17,28 +19,32 @@
 
 #define MAX_MSG_BUFFER_SIZE 2048
 
-class RTSPParser {
+class SessionHandler {
 public:
-  RTSPParser(int client_fd, std::string macAddress, std::string pi,
-             std::shared_ptr<FeatureFlags> featureFlags,
-             std::shared_ptr<StatusFlags> statusFlags,
-             std::shared_ptr<PairingManager> pairingManager);
-  ~RTSPParser();
+  SessionHandler(int client_fd, std::string macAddress, std::string pi,
+                 std::shared_ptr<FeatureFlags> featureFlags,
+                 std::shared_ptr<StatusFlags> statusFlags,
+                 std::shared_ptr<PairingManager> pairingManager);
+  ~SessionHandler();
 
   int set_client(int currentClient);
   int set_msg(char *tcpMessage, int len);
   int parse_message();
-  bool is_verified() { return verified_; };
+
   u8Vec_t get_shared_key();
 
   std::tuple<std::string, u8Vec_t> get_response();
 
+  bool is_verified() { return verified_; };
+  bool is_running() { return running_; };
+
 private:
   std::atomic<bool> verified_{false};
+  std::atomic<bool> running_{true};
   int clientID_, messageLength_, contentLength_, CSeq_;
   char *body_, *bodyBuffer_, *msg_;
   std::string request_, requestType_, title_, msgHeader_, macAddress_, pi_;
-  char header[256];
+  char header_[256];
   std::string sendHeader_;
   u8Vec_t sendBody_;
   size_t sendHeaderLen_;
@@ -55,6 +61,8 @@ private:
   std::unique_ptr<FairPlayWrapper> fairPlayWrapper_;
   std::unique_ptr<PTPTimingHandler> ptpHandler_;
   std::unique_ptr<EventHandler> eventHandler_;
+  std::unique_ptr<AudioHandler> audioDataHandler_;
+  std::unique_ptr<AudioControlHandler> audioControlHandler_;
 
   int get_content_length();
   int get_cseq();
@@ -64,6 +72,7 @@ private:
   int get_title();
   int get_body();
   int create_header(std::string applicationType, size_t plistSize);
+  int create_header();
 
   int rtsp_get_options();
   int rtsp_post_commands();
@@ -87,12 +96,25 @@ private:
   u8Vec_t fp3_setup_m3();
   u8Vec_t fp3_setup_m4();
 
+  int rtsp_post_feedback();
+
   int rtsp_setup();
+  u8Vec_t rtsp_setup_m1(pwVal::Dict dictionary);
+  u8Vec_t rtsp_setup_m2(pwVal::Dict dictionary);
+  u8Vec_t rtsp_setup_m3(pwVal::Dict dictionary);
+  u8Vec_t rtsp_setup_media_stream(pwVal::Dict dictionary);
+
+  int rtsp_record();
+  int rtsp_get_parameter();
+  int rtsp_set_peers();
+  int rtsp_teardown();
+
+  int rtsp_empty_message();
 
   u8Vec_t create_plist();
 };
 
-std::shared_ptr<RTSPParser>
+std::shared_ptr<SessionHandler>
 create_rtsp_parser(int clientID, std::string macAddress, std::string pi,
                    std::shared_ptr<FeatureFlags> featureFlags,
                    std::shared_ptr<StatusFlags> statusFlags,
