@@ -1,11 +1,13 @@
 #pragma once
 
 #include "crypto.hpp"
+#include "event.hpp"
 #include "fairplay.hpp"
 #include "flags.hpp"
 #include "pairing_manager.hpp"
 #include "plist_decoder.hpp"
 #include "plist_encoder.hpp"
+#include "ptp_timing.hpp"
 #include "srp.hpp"
 #include "tlv8.hpp"
 #include <atomic>
@@ -51,6 +53,8 @@ private:
   std::unique_ptr<TLV8Encoder> tlv8Encoder_;
   std::shared_ptr<PairingManager> pairingManager_;
   std::unique_ptr<FairPlayWrapper> fairPlayWrapper_;
+  std::unique_ptr<PTPTimingHandler> ptpHandler_;
+  std::unique_ptr<EventHandler> eventHandler_;
 
   int get_content_length();
   int get_cseq();
@@ -59,6 +63,8 @@ private:
   int get_req_type();
   int get_title();
   int get_body();
+  int create_header(std::string applicationType, size_t plistSize);
+
   int rtsp_get_options();
   int rtsp_post_commands();
   int rtsp_get_info();

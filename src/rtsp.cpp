@@ -69,10 +69,6 @@ int RTSPParser::parse_message() {
 
   if ("/info RTSP/1.0" == title_) {
     rtsp_get_info();
-  } else if ("* RTSP/1.0" == title_) {
-    rtsp_get_options();
-  } else if ("/command RTSP/1.0" == title_) {
-    rtsp_post_commands();
   } else if ("/pair-verify RTSP/1.0" == title_) {
     std::cout << "/pair-verify" << std::endl;
     rtsp_post_pair_verify();
@@ -136,72 +132,14 @@ u8Vec_t RTSPParser::create_plist() {
   return plist;
 }
 
-int RTSPParser::rtsp_get_options() {
-  int header_len = snprintf(header, sizeof(header),
-                            "RTSP/1.0 200 OK\r\n"
-                            "CSeq: %d\r\n"
-                            // "Public: OPTIONS, GET, POST, SETUP, ANNOUNCE, "
-                            // "RECORD, PAUSE, FLUSH, TEARDOWN\r\n"
-                            "Server: AirTunes/366.0\r\n"
-                            "\r\n",
-                            CSeq_);
-
-  send(clientID_, header, header_len, 0);
-
-  std::cout << "Send rtsp get options" << std::endl;
-  return 1;
-}
-
-int RTSPParser::rtsp_post_commands() {
-  int header_len = snprintf(header, sizeof(header),
-                            "RTSP/1.0 200 OK\r\n"
-                            "CSeq: %d\r\n"
-                            "Public: OPTIONS, GET, POST, SETUP, ANNOUNCE, "
-                            "RECORD, PAUSE, FLUSH, TEARDOWN\r\n"
-                            "Server: AirTunes/366.0\r\n"
-                            "\r\n",
-                            CSeq_);
-
-  send(clientID_, header, header_len, 0);
-  // int header_len = snprintf(header, sizeof(header),
-  //                           "RTSP/1.0 200 OK\r\n"
-  //                           "CSeq: %d\r\n"
-  //                           "Content-Type:
-  //                           application/x-apple-binary-plist\r\n"
-  //                           "Content-Length: %d\r\n"
-  //                           // "Server: AirTunes/366.0\r\n"
-  //                           "\r\n",
-  //                           CSeq, empty_bplist_len);
-
-  // ssize_t err = send(client_fd, header, header_len, 0);
-  // err = send(client_fd, empty_bplist, empty_bplist_len, 0);
-  //
-  // if (err <= 0)
-  //   printf("Error not printing full message");
-  //
-  // for (size_t i = 0; i < empty_bplist_len; i++)
-  //   printf("%02x", empty_bplist[i]);
-  // printf("\n");
-
-  return 1;
-}
-
 int RTSPParser::rtsp_get_info() {
   u8Vec_t plist = create_plist();
 
-  int header_len = snprintf(header, sizeof(header),
-                            "RTSP/1.0 200 OK\r\n"
-                            "CSeq: %d\r\n"
-                            "Server: AirTunes/366.0\r\n"
-                            "Content-Type: application/x-apple-binary-plist\r\n"
-                            "Content-Length: %d\r\n"
-                            "\r\n",
-                            CSeq_, (int)plist.size());
+  int header_len = create_header("x-apple-binary-plist", plist.size());
 
-  if (send(clientID_, header, header_len, 0) < 0)
-    std::cerr << "[RTSPParser] Header not sent correctly!" << std::endl;
-  if (send(clientID_, plist.data(), plist.size(), 0) < 0)
-    std::cerr << "[RTSPParser] Header not sent correctly!" << std::endl;
+  sendHeader_ = header;
+  sendHeaderLen_ = header_len;
+  sendBody_ = plist;
 
   return 1;
 }
@@ -253,14 +191,7 @@ int RTSPParser::rtsp_post_pair_setup() {
 
   body = tlv8Encoder_->get_body();
 
-  int header_len = snprintf(header, sizeof(header),
-                            "RTSP/1.0 200 OK\r\n"
-                            "CSeq: %d\r\n"
-                            "Server: AirTunes/366.0\r\n"
-                            "Content-Type: application/octet-stream\r\n"
-                            "Content-Length: %d\r\n"
-                            "\r\n",
-                            CSeq_, (int)body.size());
+  int header_len = create_header("octet-stream", body.size());
 
   std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
 
@@ -270,8 +201,9 @@ int RTSPParser::rtsp_post_pair_setup() {
 
   std::cout << std::endl;
 
-  err = send(clientID_, header, header_len, 0);
-  err = send(clientID_, body.data(), body.size(), 0);
+  sendHeader_ = header;
+  sendHeaderLen_ = header_len;
+  sendBody_ = body;
 
   if (err <= 0) {
     std::cerr << "Could not send message." << std::endl;
@@ -482,27 +414,13 @@ int RTSPParser::rtsp_post_pair_verify() {
 
   body = tlv8Encoder_->get_body();
 
-  int header_len = snprintf(header, sizeof(header),
-                            "RTSP/1.0 200 OK\r\n"
-                            "CSeq: %d\r\n"
-                            "Server: AirTunes/366.0\r\n"
-                            "Content-Type: application/octet-stream\r\n"
-                            "Content-Length: %d\r\n"
-                            "\r\n",
-                            CSeq_, (int)body.size());
-
-  std::cout << header << std::endl;
-  for (auto c : body)
-    std::cout << chars_to_hex(u8Vec_t{c}) << " ";
-
-  std::cout << std::endl;
+  int header_len = create_header("octet-stream", body.size());
 
   std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
 
-  u8Vec_t fullMessage(header, header + header_len);
-  fullMessage.insert(fullMessage.end(), body.begin(), body.end());
-
-  err = send(clientID_, fullMessage.data(), fullMessage.size(), 0);
+  sendHeaderLen_ = header_len;
+  sendHeader_ = header;
+  sendBody_ = body;
 
   if (err <= 0) {
     std::cerr << "Could not send message." << std::endl;
@@ -636,14 +554,7 @@ int RTSPParser::rtsp_post_fp_setup() {
     break;
   }
 
-  int header_len = snprintf(header, sizeof(header),
-                            "RTSP/1.0 200 OK\r\n"
-                            "CSeq: %d\r\n"
-                            "Server: AirTunes/366.0\r\n"
-                            "Content-Type: application/octet-stream\r\n"
-                            "Content-Length: %d\r\n"
-                            "\r\n",
-                            CSeq_, int(body.size()));
+  int header_len = create_header("octet-stream", body.size());
 
   sendHeaderLen_ = header_len;
   sendHeader_ = header;
@@ -662,20 +573,19 @@ int RTSPParser::rtsp_setup() {
   std::cout << "Decoding RTSP Setup BPlist" << std::endl;
   plistDecoder_->decode(body_, contentLength_);
 
-  std::vector<uint8_t> bplistPayload = plistEncoder_->serialize(V::dict(
-      {{"timingPort", pwVal::uint(5000)}, {"eventPort", pwVal::uint(5001)}}));
+  ptpHandler_ = create_ptp_timing_handler();
+  eventHandler_ = create_event_handler();
+
+  ptpHandler_->start();
+  eventHandler_->start();
+
+  std::vector<uint8_t> bplistPayload = plistEncoder_->serialize(
+      V::dict({{"timingPort", pwVal::uint(ptpHandler_->get_port())},
+               {"eventPort", pwVal::uint(eventHandler_->get_port())}}));
 
   body = bplistPayload;
 
-  int header_len = snprintf(header, sizeof(header),
-                            "RTSP/1.0 200 OK\r\n"
-                            "CSeq: %d\r\n"
-                            "Session: 1\r\n"
-                            "Server: AirTunes/366.0\r\n"
-                            "Content-Type: application/x-apple-binary-plist\r\n"
-                            "Content-Length: %d\r\n"
-                            "\r\n",
-                            CSeq_, int(body.size()));
+  int header_len = create_header("x-apple-binary-plist", body.size());
 
   sendHeaderLen_ = header_len;
   sendHeader_ = header;
@@ -707,19 +617,14 @@ u8Vec_t RTSPParser::fp3_setup_m4() {
 }
 
 int RTSPParser::rtsp_post_pair_error() {
-  uint8_t tlv[] = {0x06, 0x01, 0x02,  // State = M2
-                   0x07, 0x01, 0x02}; // Error = Authentication
+  u8Vec_t tlv = {0x06, 0x01, 0x02,  // State = M2
+                 0x07, 0x01, 0x02}; // Error = Authentication
 
-  int header_len = snprintf(header, sizeof(header),
-                            "RTSP/1.0 200 OK\r\n"
-                            "CSeq: %d\r\n"
-                            "Content-Type: application/octet-stream\r\n"
-                            "Content-Length: %d\r\n"
-                            "\r\n",
-                            CSeq_, (int)sizeof(tlv));
+  int header_len = create_header("octet-stream", sizeof(tlv));
 
-  send(clientID_, header, header_len, 0);
-  send(clientID_, tlv, sizeof(tlv), 0);
+  sendHeader_ = header;
+  sendHeaderLen_ = header_len;
+  sendBody_ = tlv;
 
   return 1;
 }
@@ -810,6 +715,17 @@ int RTSPParser::get_body() {
 
 u8Vec_t RTSPParser::get_shared_key() {
   return cryptoHandler_->get_shared_key();
+}
+
+int RTSPParser::create_header(std::string applicationType, size_t plistSize) {
+  return snprintf(header, sizeof(header),
+                  "RTSP/1.0 200 OK\r\n"
+                  "CSeq: %d\r\n"
+                  "Server: AirTunes/366.0\r\n"
+                  "Content-Type: application/%s\r\n"
+                  "Content-Length: %d\r\n"
+                  "\r\n",
+                  CSeq_, applicationType.c_str(), (int)plistSize);
 }
 
 std::shared_ptr<RTSPParser>

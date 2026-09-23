@@ -3,6 +3,7 @@
 #include "flags.hpp"
 #include "pairing_manager.hpp"
 #include "rtsp.hpp"
+#include "tcp.hpp"
 #include "transport_crypto.hpp"
 #include "utils.hpp"
 
@@ -14,6 +15,7 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netpacket/packet.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 AirPlayServer::AirPlayServer(const std::string &device_name, uint16_t port)
@@ -44,8 +46,12 @@ bool AirPlayServer::start() {
               << " on port " << 5000 << std::endl;
   }
 
+  auto callback = [this](int id) { this->handle_client(id); };
+
   running_ = true;
-  server_thread_ = std::thread(&AirPlayServer::run, this);
+  server_thread_ =
+      std::thread(&create_and_bind_socket, callback, "AirPlayServer", port_,
+                  std::ref(running_), nullptr);
   return true;
 }
 
@@ -102,63 +108,6 @@ void AirPlayServer::stop() {
     mdns_->stop();
 }
 
-void AirPlayServer::run() {
-  int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (server_fd < 0) {
-    std::cerr << "[AirPlayServer] Socket creation failed!" << std::endl;
-    return;
-  }
-
-  int opt = 1;
-  setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-  sockaddr_in address{};
-  address.sin_family = AF_INET;
-  address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port = htons(port_);
-
-  if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-    std::cerr << "[AirPlayServer] Bind failed!" << std::endl;
-    close(server_fd);
-    return;
-  }
-
-  if (listen(server_fd, 5) < 0) {
-    std::cerr << "[AirPlayServer] Listen failed!" << std::endl;
-    close(server_fd);
-    return;
-  }
-
-  std::cout << "[AirPlayServer] Listening for iOS connections on port " << port_
-            << "..." << std::endl;
-
-  while (running_) {
-    sockaddr_in client_addr{};
-    socklen_t addrlen = sizeof(client_addr);
-
-    // Simple select to make socket non-blocking for clean shutdown
-    fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(server_fd, &readfds);
-
-    struct timeval timeout;
-    timeout.tv_sec = 1;
-    timeout.tv_usec = 0;
-
-    int activity = select(server_fd + 1, &readfds, nullptr, nullptr, &timeout);
-    if (activity > 0 && FD_ISSET(server_fd, &readfds)) {
-      int client_fd =
-          accept(server_fd, (struct sockaddr *)&client_addr, &addrlen);
-      if (client_fd >= 0) {
-        std::cout << "[AirPlayServer] New client connected!" << std::endl;
-        std::thread(&AirPlayServer::handle_client, this, client_fd).detach();
-      }
-    }
-  }
-
-  close(server_fd);
-}
-
 void AirPlayServer::handle_client(int clientID) {
   std::cout << "Created new RTSP handler for client with ID: " << clientID
             << std::endl
@@ -180,6 +129,12 @@ void AirPlayServer::handle_client(int clientID) {
     if (!rtspParser->is_verified()) {
       rtspParser->set_msg(buffer, bytes_read);
       rtspParser->parse_message();
+
+      auto [header, body] = rtspParser->get_response();
+      u8Vec_t payload(header.begin(), header.end());
+      payload.insert(payload.end(), body.begin(), body.end());
+
+      send(clientID, payload.data(), payload.size(), 0);
     } else if (rtspParser->is_verified() && !cipherTransporter) {
       cipherTransporter =
           create_cipher_transporter(rtspParser->get_shared_key());

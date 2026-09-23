@@ -5,6 +5,7 @@
 #include "pairing_manager.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <thread>
@@ -21,7 +22,6 @@ private:
   std::shared_ptr<StatusFlags> statusFlags_;
   std::shared_ptr<PairingManager> pairingManager_;
 
-  void run();
   int create_airplay_service();
   int publish_airplay_service();
   int publish_raop_service();
