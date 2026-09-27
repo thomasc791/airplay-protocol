@@ -5,6 +5,7 @@
 #include <ifaddrs.h>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <unistd.h>
 
 SocketResource::SocketResource(__socket_type socketType, uint64_t port)
@@ -64,8 +65,8 @@ void SocketResource::stop() {
 }
 
 TCPServer::TCPServer(std::function<void(int)> handler, std::string tag,
-                     uint64_t port)
-    : fd_(-1), tag_(tag), handler_(handler) {
+                     uint64_t port, std::optional<timeval> recvTimeout)
+    : fd_(-1), tag_(tag), handler_(handler), recvTimeout_(recvTimeout) {
   socket_ = std::make_unique<SocketResource>(SOCK_STREAM, port);
 }
 
@@ -125,8 +126,10 @@ void TCPServer::server_loop() {
       int client_fd = accept(fd_, (struct sockaddr *)&client_addr, &addrlen);
       if (client_fd >= 0) {
         std::cout << "[" << tag_ << "] New client connected!" << std::endl;
-        setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout,
-                   sizeof(timeout));
+        if (recvTimeout_) {
+          setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &recvTimeout_.value(),
+                     sizeof(recvTimeout_.value()));
+        }
         std::thread(handler_, (client_fd)).detach();
       }
     }

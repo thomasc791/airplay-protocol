@@ -673,9 +673,11 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
 
   if (streamType == 130) {
     body = rtsp_setup_m2(incomingStreamDict, streamType);
-  } else if (streamType == 96 || plistDecoder_->has_key(dictionary, "ekey")) {
+  } else if (streamType == 96 ||
+             plistDecoder_->has_key(incomingStreamDict, "ekey")) {
     body = rtsp_setup_m2(incomingStreamDict, streamType);
-  } else if (streamType == 103 || plistDecoder_->has_key(dictionary, "shk")) {
+  } else if (streamType == 103 ||
+             plistDecoder_->has_key(incomingStreamDict, "shk")) {
     streamID = plistDecoder_->get(dictionary, "streamID").uintVal;
 
     int index = available_stream(audioDataStreams_);

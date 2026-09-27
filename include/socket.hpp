@@ -34,7 +34,8 @@ private:
 class TCPServer {
 public:
   TCPServer(std::function<void(int)> handler, std::string tag = "TCPServer",
-            uint64_t port = 0);
+            uint64_t port = 0,
+            std::optional<timeval> recvTimeout = std::nullopt);
   ~TCPServer();
 
   uint64_t get_port() { return socket_->get_port(); }
@@ -44,6 +45,7 @@ public:
 private:
   int fd_;
 
+  std::optional<timeval> recvTimeout_;
   std::atomic<bool> running_{false};
   std::thread loopThread_;
   std::string tag_;

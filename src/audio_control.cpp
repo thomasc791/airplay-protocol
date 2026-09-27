@@ -19,7 +19,7 @@ AudioControlHandler::AudioControlHandler(Protocol protocol)
   case Protocol::TCP:
     tcpListener_ = std::make_unique<TCPServer>(
         [this](int id) { this->handle_tcp_controls(id); },
-        "AudioControlHandler", 0);
+        "AudioControlHandler", 0, timeval{1, 0});
   }
 }
 
@@ -71,6 +71,9 @@ void AudioControlHandler::handle_tcp_controls(int id) {
     ssize_t bytes_read = recv(id, buffer, BUFFER_SIZE, 0);
 
     if (bytes_read > 0) {
+      std::cout << "[" << tag << "]" << std::endl
+                << chars_to_hex_c((const uint8_t *)buffer, bytes_read)
+                << std::endl;
     } else if (bytes_read == 0) {
       std::cout << "[" << tag << "] TCP Client disconnected." << std::endl;
       break;
