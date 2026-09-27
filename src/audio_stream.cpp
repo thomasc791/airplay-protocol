@@ -8,7 +8,7 @@ constexpr std::string tag = "AudioHandler";
 
 AudioDataHandler::AudioDataHandler() {
   auto callback = [this](int id) { this->handle_audio_data(id); };
-  listener_ = std::make_unique<TCPServer>(callback, "AudioControlHandler", 0);
+  listener_ = std::make_unique<TCPServer>(callback, "AudioDataHandler", 0);
 }
 
 AudioDataHandler::~AudioDataHandler() {
@@ -68,6 +68,25 @@ uint32_t AudioDataHandler::extract_size_from_header(const u8Vec_t &header) {
   return payload_size;
 }
 
-std::unique_ptr<AudioDataHandler> create_audio_handler() {
-  return std::make_unique<AudioDataHandler>();
+int get_key(StreamSlotArray streams, size_t key) {
+  for (size_t i = 0; i < streams.size(); i++) {
+    if (streams[i].active && streams[i].streamID == key) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+int available_stream(StreamSlotArray streams) {
+  for (size_t i = 0; i < streams.size(); i++) {
+    if (!streams[i].active) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+std::shared_ptr<AudioDataHandler> create_audio_handler() {
+  return std::make_shared<AudioDataHandler>();
 }

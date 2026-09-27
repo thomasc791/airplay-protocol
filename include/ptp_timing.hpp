@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <sys/socket.h>
 
 class PTPTimingHandler {
 public:
@@ -18,7 +19,8 @@ private:
   std::unique_ptr<UDPServer> listener_;
   std::atomic<bool> running_{false};
 
-  void handle_ptp_timing(const char *data, size_t length, sockaddr_in sender);
+  void handle_ptp_timing(const char *data, size_t length,
+                         sockaddr_storage sender);
 };
 
 std::unique_ptr<PTPTimingHandler> create_ptp_timing_handler();

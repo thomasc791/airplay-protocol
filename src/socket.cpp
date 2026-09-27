@@ -70,17 +70,25 @@ TCPServer::TCPServer(std::function<void(int)> handler, std::string tag,
 }
 
 TCPServer::~TCPServer() {
+  running_ = false;
   if (socket_) {
-    socket_.reset();
+    socket_->stop();
   }
+
+  shutdown(fd_, SHUT_RDWR);
 
   // 2. Wait for the background thread to safely exit
   if (loopThread_.joinable()) {
     loopThread_.join();
   }
+
+  if (socket_) {
+    socket_.reset();
+  }
 }
 
 bool TCPServer::start() {
+  running_ = true;
   socket_->start(tag_);
   fd_ = socket_->get_fd();
 
@@ -95,14 +103,13 @@ bool TCPServer::start() {
             << std::dec << int(socket_->get_port()) << "..." << std::endl;
 
   loopThread_ = std::thread([this]() { server_loop(); });
-  loopThread_.detach();
 
   return true;
 }
 
 void TCPServer::server_loop() {
-  while (socket_->is_running()) {
-    sockaddr_in client_addr{};
+  while (running_) {
+    sockaddr_storage client_addr{};
     socklen_t addrlen = sizeof(client_addr);
 
     fd_set readfds;
@@ -118,6 +125,8 @@ void TCPServer::server_loop() {
       int client_fd = accept(fd_, (struct sockaddr *)&client_addr, &addrlen);
       if (client_fd >= 0) {
         std::cout << "[" << tag_ << "] New client connected!" << std::endl;
+        setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                   sizeof(timeout));
         std::thread(handler_, (client_fd)).detach();
       }
     }
@@ -125,10 +134,10 @@ void TCPServer::server_loop() {
   close(fd_);
 }
 
-UDPServer::UDPServer(
-    std::function<void(const char *data, size_t length, sockaddr_in sender)>
-        handler,
-    std::string tag, uint64_t port)
+UDPServer::UDPServer(std::function<void(const char *data, size_t length,
+                                        sockaddr_storage sender)>
+                         handler,
+                     std::string tag, uint64_t port)
     : fd_(-1), tag_(tag), handler_(handler) {
   socket_ = std::make_unique<SocketResource>(SOCK_DGRAM, port);
 }
@@ -160,7 +169,7 @@ void UDPServer::server_loop() {
 
       // 1. Drain the data from the OS buffer immediately
       char buffer[2048];
-      sockaddr_in sender_addr{};
+      sockaddr_storage sender_addr{};
       socklen_t sender_len = sizeof(sender_addr);
 
       ssize_t bytes = recvfrom(fd_, buffer, sizeof(buffer), 0,

@@ -6,20 +6,53 @@
 #include <cstdint>
 #include <memory>
 
+#define MAX_STREAMS 5
+
+enum class Protocol { UDP, TCP };
+
 class AudioControlHandler {
 public:
-  AudioControlHandler();
+  AudioControlHandler(Protocol protocol);
   ~AudioControlHandler();
 
-  uint64_t get_port() { return listener_->get_port(); }
+  uint64_t get_port();
 
   void start();
 
 private:
-  std::unique_ptr<UDPServer> listener_;
+  Protocol protocol_;
+  std::unique_ptr<UDPServer> udpListener_;
+  std::unique_ptr<TCPServer> tcpListener_;
   std::atomic<bool> running_{false};
 
-  void handle_controls(const char *data, size_t length, sockaddr_in sender);
+  void handle_udp_controls(const char *data, size_t length,
+                           sockaddr_storage sender);
+  void handle_tcp_controls(int id);
 };
 
-std::unique_ptr<AudioControlHandler> create_audio_control_handler();
+std::shared_ptr<AudioControlHandler>
+create_audio_control_handler(Protocol protocol);
+
+struct ControlSlot {
+  uint64_t streamID;
+  bool active = false;
+  std::shared_ptr<AudioControlHandler> stream;
+
+  int reset() {
+    this->stream.reset();
+    this->active = false;
+    this->streamID = 0;
+
+    return this->stream ? -1 : 1;
+  }
+  std::shared_ptr<AudioControlHandler> &create(Protocol protocol, uint64_t id) {
+    this->stream = create_audio_control_handler(protocol);
+    this->stream->start();
+    this->active = true;
+    this->streamID = id;
+
+    return this->stream;
+  }
+};
+
+typedef std::array<ControlSlot, MAX_STREAMS> ControlSlotArray;

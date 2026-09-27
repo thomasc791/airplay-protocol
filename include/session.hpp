@@ -39,6 +39,8 @@ public:
   bool is_running() { return running_; };
 
 private:
+  StreamSlotArray audioDataStreams_;
+  ControlSlotArray audioControlHandlers_;
   std::atomic<bool> verified_{false};
   std::atomic<bool> running_{true};
   int clientID_, messageLength_, contentLength_, CSeq_;
@@ -48,6 +50,7 @@ private:
   std::string sendHeader_;
   u8Vec_t sendBody_;
   size_t sendHeaderLen_;
+  uint32_t streamID = 0;
 
   std::unique_ptr<PlistEncoder> plistEncoder_;
   std::unique_ptr<PlistDecoder> plistDecoder_;
@@ -61,8 +64,6 @@ private:
   std::unique_ptr<FairPlayWrapper> fairPlayWrapper_;
   std::unique_ptr<PTPTimingHandler> ptpHandler_;
   std::unique_ptr<EventHandler> eventHandler_;
-  std::unique_ptr<AudioDataHandler> audioDataHandler_;
-  std::unique_ptr<AudioControlHandler> audioControlHandler_;
 
   int get_content_length();
   int get_cseq();
@@ -100,7 +101,7 @@ private:
 
   int rtsp_setup();
   u8Vec_t rtsp_setup_m1(pwVal::Dict dictionary);
-  u8Vec_t rtsp_setup_m2(pwVal::Dict dictionary);
+  u8Vec_t rtsp_setup_m2(pwVal::Dict dictionary, int streamType);
   u8Vec_t rtsp_setup_m3(pwVal::Dict dictionary);
   u8Vec_t rtsp_setup_media_stream(pwVal::Dict dictionary);
 
@@ -109,7 +110,9 @@ private:
   int rtsp_set_peers();
   int rtsp_post_audiomode();
   int rtsp_set_rate_anchortime();
+
   int rtsp_teardown();
+  int rtsp_new_stream(PlistEncoder::Value::Dict dictionary);
 
   int rtsp_empty_message();
 

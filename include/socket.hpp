@@ -44,6 +44,7 @@ public:
 private:
   int fd_;
 
+  std::atomic<bool> running_{false};
   std::thread loopThread_;
   std::string tag_;
   std::function<void(int)> handler_;
@@ -54,10 +55,10 @@ private:
 
 class UDPServer {
 public:
-  UDPServer(
-      std::function<void(const char *data, size_t length, sockaddr_in sender)>
-          handler,
-      std::string tag = "UDPServer", uint64_t port = 0);
+  UDPServer(std::function<void(const char *data, size_t length,
+                               sockaddr_storage sender)>
+                handler,
+            std::string tag = "UDPServer", uint64_t port = 0);
 
   uint64_t get_port() { return socket_->get_port(); }
   bool is_running() { return socket_->is_running(); }
@@ -66,7 +67,7 @@ public:
 private:
   int fd_;
   std::string tag_;
-  std::function<void(const char *data, size_t length, sockaddr_in sender)>
+  std::function<void(const char *data, size_t length, sockaddr_storage sender)>
       handler_;
   std::unique_ptr<SocketResource> socket_;
 

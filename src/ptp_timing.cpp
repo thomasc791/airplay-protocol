@@ -7,7 +7,8 @@
 constexpr std::string tag = "PTPHandler";
 
 PTPTimingHandler::PTPTimingHandler() {
-  auto callback = [this](const char *data, size_t length, sockaddr_in sender) {
+  auto callback = [this](const char *data, size_t length,
+                         sockaddr_storage sender) {
     this->handle_ptp_timing(data, length, sender);
   };
   listener_ = std::make_unique<UDPServer>(callback, "PTPTimingHandler", 31900);
@@ -21,11 +22,10 @@ PTPTimingHandler::~PTPTimingHandler() {
 void PTPTimingHandler::start() { listener_->start(); };
 
 void PTPTimingHandler::handle_ptp_timing(const char *data, size_t length,
-                                         sockaddr_in sender) {
+                                         sockaddr_storage sender) {
   std::cout << "[" << tag << "] Received " << length << " bytes from iPhone!"
             << std::endl;
 
-  // Optional: Print the first byte to see the PTP message type
   printf("[PTP] Message Type: %02x\n", (unsigned char)data[0]);
 }
 

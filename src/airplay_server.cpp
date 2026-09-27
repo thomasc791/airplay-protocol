@@ -2,7 +2,7 @@
 #include "crypto.hpp"
 #include "flags.hpp"
 #include "pairing_manager.hpp"
-#include "rtsp.hpp"
+#include "session.hpp"
 #include "socket.hpp"
 #include "transport_crypto.hpp"
 #include "utils.hpp"
@@ -113,12 +113,12 @@ void AirPlayServer::handle_client(int clientID) {
   std::cout << "Created new RTSP handler for client with ID: " << clientID
             << std::endl
             << "Starting new RTSP parser..." << std::endl;
-  auto rtspParser = create_rtsp_parser(clientID, deviceID_, pi_, featureFlags_,
-                                       statusFlags_, pairingManager_);
+  auto sessionHandler = create_rtsp_parser(
+      clientID, deviceID_, pi_, featureFlags_, statusFlags_, pairingManager_);
   std::unique_ptr<CipherTransporter> cipherTransporter;
 
   char buffer[2048] = {0};
-  while (rtspParser->is_running()) {
+  while (sessionHandler->is_running()) {
     memset(buffer, 0, sizeof(buffer));
     ssize_t bytes_read = read(clientID, buffer, sizeof(buffer) - 1);
 
@@ -127,18 +127,18 @@ void AirPlayServer::handle_client(int clientID) {
       break;
     }
 
-    if (!rtspParser->is_verified()) {
-      rtspParser->set_msg(buffer, bytes_read);
-      rtspParser->parse_message();
+    if (!sessionHandler->is_verified()) {
+      sessionHandler->set_msg(buffer, bytes_read);
+      sessionHandler->parse_message();
 
-      auto [header, body] = rtspParser->get_response();
+      auto [header, body] = sessionHandler->get_response();
       u8Vec_t payload(header.begin(), header.end());
       payload.insert(payload.end(), body.begin(), body.end());
 
       send(clientID, payload.data(), payload.size(), 0);
-    } else if (rtspParser->is_verified() && !cipherTransporter) {
+    } else if (sessionHandler->is_verified() && !cipherTransporter) {
       cipherTransporter =
-          create_cipher_transporter(rtspParser->get_shared_key());
+          create_cipher_transporter(sessionHandler->get_shared_key());
     }
 
     if (cipherTransporter) {
@@ -148,10 +148,10 @@ void AirPlayServer::handle_client(int clientID) {
       std::string decrypted(decryptResult.plaintext.begin(),
                             decryptResult.plaintext.end());
 
-      rtspParser->set_msg((char *)decrypted.c_str(), decrypted.size());
-      rtspParser->parse_message();
+      sessionHandler->set_msg((char *)decrypted.c_str(), decrypted.size());
+      sessionHandler->parse_message();
 
-      auto [header, body] = rtspParser->get_response();
+      auto [header, body] = sessionHandler->get_response();
       u8Vec_t payload(header.begin(), header.end());
       payload.insert(payload.end(), body.begin(), body.end());
 
