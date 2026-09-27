@@ -1,4 +1,5 @@
 #include "audio_stream.hpp"
+#include "crypto.hpp"
 #include "utils.hpp"
 
 #include <memory>
@@ -6,7 +7,7 @@
 
 constexpr std::string tag = "AudioHandler";
 
-AudioDataHandler::AudioDataHandler() {
+AudioDataHandler::AudioDataHandler(u8Vec_t shk) : shk_(shk) {
   auto callback = [this](int id) { this->handle_audio_data(id); };
   listener_ = std::make_unique<TCPServer>(callback, "AudioDataHandler", 0);
 }
@@ -23,17 +24,19 @@ void AudioDataHandler::handle_audio_data(int id) {
 
   constexpr size_t BUFFER_SIZE = 32768;
   u8Vec_t recv_buffer(BUFFER_SIZE);
-
   while (running_) {
-    std::vector<uint8_t> header_data = read_exact_bytes(id, 4);
+    log_event(tag, "Reading Stream header");
+    std::vector<uint8_t> header_data = read_exact_bytes(id, 2);
     if (header_data.empty())
       break;
 
-    uint32_t payload_size = extract_size_from_header(header_data);
+    uint16_t payload_size = (static_cast<uint16_t>(header_data[1]) << 8) |
+                            static_cast<uint16_t>(header_data[0]);
 
-    u8Vec_t encrypted_audio = read_exact_bytes(id, payload_size);
+    u8Vec_t encrypted_audio = read_exact_bytes(id, payload_size + 16);
     if (encrypted_audio.empty())
       break;
+    log_event(tag, "Reading Stream data");
   }
 }
 
@@ -87,6 +90,6 @@ int available_stream(StreamSlotArray streams) {
   return -1;
 }
 
-std::shared_ptr<AudioDataHandler> create_audio_handler() {
-  return std::make_shared<AudioDataHandler>();
+std::shared_ptr<AudioDataHandler> create_audio_handler(u8Vec_t shk) {
+  return std::make_shared<AudioDataHandler>(shk);
 }

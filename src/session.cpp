@@ -72,86 +72,105 @@ int SessionHandler::set_client(int currentClient) {
 }
 
 int SessionHandler::set_msg(char *tcpMessage, int len) {
-  // ESP_LOGI(TAG, "Set message with length: %d", len);
-  msg_ = tcpMessage;
-  messageLength_ = len;
+  connectionBuffer_.insert(connectionBuffer_.end(), tcpMessage,
+                           tcpMessage + len);
   return 1;
 }
 
 int SessionHandler::parse_message() {
-  msg_[messageLength_] = '\0';
-
+  u8Vec_t finalResponse;
   reset_state();
 
-  get_content_length();
-  get_cseq();
-  get_req();
-  get_req_type();
-  get_title();
-  get_body();
+  while (true) {
+    std::string delimiter = "\r\n\r\n";
+    auto header_end =
+        std::search(connectionBuffer_.begin(), connectionBuffer_.end(),
+                    delimiter.begin(), delimiter.end());
 
-  std::cout << request_ << std::endl;
-  std::cout << header_ << std::endl;
-  for (int i = 0; i < messageLength_; i++) {
-    printf("%02x ", (unsigned char)msg_[i]);
-  }
-  printf("\n");
+    if (header_end == connectionBuffer_.end())
+      break;
 
-  if ("/info RTSP/1.0" == title_) {
-    rtsp_get_info();
-  } else if ("/pair-setup RTSP/1.0" == title_) {
-    std::cout << "/pair-setup" << std::endl;
-    rtsp_post_pair_setup();
-  } else if ("/pair-verify RTSP/1.0" == title_) {
-    std::cout << "/pair-verify" << std::endl;
-    rtsp_post_pair_verify();
-  } else if ("/fp-setup RTSP/1.0" == title_) {
-    std::cout << "/fp-setup" << std::endl;
-    rtsp_post_fp_setup();
-  } else if ("/feedback RTSP/1.0" == title_) {
-    std::cout << "/feedback" << std::endl;
-    rtsp_post_feedback();
-  } else if ("/command RTSP/1.0" == title_) {
-    std::cout << "/command" << std::endl;
-    rtsp_post_commands();
-  } else if ("/audioMode RTSP/1.0" == title_) {
-    std::cout << "/audioMode" << std::endl;
-    rtsp_post_audiomode();
-  } else if ("SETUP" == requestType_) {
-    std::cout << "SETUP" << std::endl;
-    rtsp_setup();
-  } else if ("TEARDOWN" == requestType_) {
-    std::cout << "TEARDOWN" << std::endl;
-    rtsp_teardown();
-  } else if ("RECORD" == requestType_) {
-    std::cout << "RECORD" << std::endl;
-    rtsp_record();
-  } else if ("GET_PARAMETER" == requestType_) {
-    std::cout << "GET_PARAMETER" << std::endl;
-    rtsp_get_parameter();
-  } else if ("SET_PARAMETER" == requestType_) {
-    std::cout << "SET_PARAMETER" << std::endl;
-    rtsp_get_parameter();
-  } else if ("SETPEERS" == requestType_) {
-    std::cout << "SETPEERS" << std::endl;
-    rtsp_set_peers();
-  } else if ("SETRATEANCHORTIME" == requestType_) {
-    std::cout << "SETRATEANCHORTIME" << std::endl;
-    rtsp_set_rate_anchortime();
-  } else {
-    std::cout << msg_ << std::endl;
-    std::cout << "[RTSPParser] Unknown or encrypted message received! Lengte: "
-              << messageLength_ << std::endl;
-    std::cout << "Ruwe hex data:" << std::endl;
-    for (int i = 0; i < messageLength_; i++) {
-      printf("%02x ", (unsigned char)msg_[i]);
+    size_t header_length =
+        std::distance(connectionBuffer_.begin(), header_end) + 4;
+    std::string header_str(connectionBuffer_.begin(),
+                           connectionBuffer_.begin() + header_length);
+
+    int content_len = 0;
+    size_t pos = header_str.find("Content-Length:");
+    if (pos != std::string::npos) {
+      std::cout << "Found content length" << std::endl;
+      sscanf(header_str.c_str() + pos, "Content-Length: %d\r\n", &content_len);
     }
-    printf("\n");
 
-    rtsp_empty_message();
+    size_t total_length = header_length + (content_len > 0 ? content_len : 0);
+    if (connectionBuffer_.size() < total_length)
+      break;
+
+    msg_ = (char *)header_str.c_str();
+    messageLength_ = header_length;
+    contentLength_ = content_len;
+
+    get_cseq();
+    get_req();
+    get_req_type();
+    get_title();
+
+    std::cout << header_str << std::endl;
+    std::cout << "content length: " << contentLength_ << std::endl;
+
+    if (contentLength_ > 0) {
+      bodyVec_ = u8Vec_t(connectionBuffer_.begin() + header_length,
+                         connectionBuffer_.begin() + total_length);
+      body_ = (char *)bodyVec_.data();
+    } else {
+      bodyVec_.clear();
+      body_ = nullptr;
+    }
+
+    if ("/info RTSP/1.0" == title_) {
+      rtsp_get_info();
+    } else if ("/pair-setup RTSP/1.0" == title_) {
+      rtsp_post_pair_setup();
+    } else if ("/pair-verify RTSP/1.0" == title_) {
+      rtsp_post_pair_verify();
+    } else if ("/fp-setup RTSP/1.0" == title_) {
+      rtsp_post_fp_setup();
+    } else if ("/feedback RTSP/1.0" == title_) {
+      rtsp_post_feedback();
+    } else if ("/command RTSP/1.0" == title_) {
+      rtsp_post_commands();
+    } else if ("/audioMode RTSP/1.0" == title_) {
+      rtsp_post_audiomode();
+    } else if ("SETUP" == requestType_) {
+      rtsp_setup();
+    } else if ("TEARDOWN" == requestType_) {
+      rtsp_teardown();
+    } else if ("RECORD" == requestType_) {
+      rtsp_record();
+    } else if ("GET_PARAMETER" == requestType_ ||
+               "SET_PARAMETER" == requestType_) {
+      rtsp_get_parameter();
+    } else if ("SETPEERS" == requestType_) {
+      rtsp_set_peers();
+    } else if ("SETRATEANCHORTIME" == requestType_) {
+      rtsp_set_rate_anchortime();
+    } else {
+      rtsp_empty_message();
+    }
+
+    std::string headStr(header_);
+    finalResponse.insert(finalResponse.end(), headStr.begin(), headStr.end());
+    finalResponse.insert(finalResponse.end(), sendBody_.begin(),
+                         sendBody_.end());
+
+    connectionBuffer_.erase(connectionBuffer_.begin(),
+                            connectionBuffer_.begin() + total_length);
   }
-  printf("\n");
+
+  sendHeader_ = "";
+  sendBody_ = finalResponse;
   messageLength_ = 0;
+
   return 1;
 }
 
@@ -655,7 +674,6 @@ u8Vec_t SessionHandler::rtsp_setup_m1(pwVal::Dict dictionary) {
 }
 
 u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
-  using V = PlistEncoder::Value;
   u8Vec_t body = {};
 
   auto streams = plistDecoder_->get(dictionary, "streams");
@@ -684,7 +702,10 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
     if (index == -1) {
       std::cerr << "Maximum concurrent streams reached!" << std::endl;
     }
-    auto &audioData = audioDataStreams_[index].create(streamID);
+
+    u8Vec_t shk = plistDecoder_->get(dictionary, "shk").dataVal;
+
+    auto &audioData = audioDataStreams_[index].create(streamID, shk);
     auto &audioControl =
         audioControlHandlers_[index].create(Protocol::UDP, streamID);
 
@@ -727,7 +748,9 @@ u8Vec_t SessionHandler::rtsp_setup_m2(pwVal::Dict dictionary, int streamType) {
     streamDict.push_back(
         {"controlPort", pwVal::uint(audioControl->get_port())});
   } else {
-    auto &audioData = audioDataStreams_[index].create(streamID);
+    shk_ = plistDecoder_->get(dictionary, "shk").dataVal;
+
+    auto &audioData = audioDataStreams_[index].create(streamID, shk_);
     auto &audioControl =
         audioControlHandlers_[index].create(Protocol::UDP, streamID);
     streamDict.push_back({"dataPort", pwVal::uint(audioData->get_port())});
@@ -787,8 +810,8 @@ int SessionHandler::rtsp_teardown() {
   std::cout << "Decoding RTSP Setup BPlist" << std::endl;
   auto dictionary = plistDecoder_->decode(body_, contentLength_).dictVal;
 
-  if (!plistDecoder_->has_key(dictionary, "streams")) {
-    rtsp_new_stream(dictionary);
+  if (plistDecoder_->has_key(dictionary, "streams")) {
+    rtsp_new_stream(dictionary[0].value.arrayVal[0].dictVal);
   } else {
     rtsp_empty_message();
     running_ = false;
@@ -809,14 +832,23 @@ int SessionHandler::rtsp_teardown() {
 int SessionHandler::rtsp_new_stream(PlistEncoder::Value::Dict dictionary) {
   uint64_t currentID = plistDecoder_->get(dictionary, "streamID").uintVal;
 
+  for (auto k : dictionary) {
+    std::cout << k.key << std::endl;
+    std::cout << k.value.uintVal << std::endl;
+  }
+
+  for (auto e : audioDataStreams_)
+    std::cout << e.streamID << std::endl;
+
   int index = get_key(audioDataStreams_, currentID);
   if (index == -1) {
-    std::cerr << "Maximum concurrent streams reached!" << std::endl;
+    std::cerr << "Could not find stream: " << currentID << "!" << std::endl;
   }
+
   audioDataStreams_[index].reset();
   audioControlHandlers_[index].reset();
 
-  audioDataStreams_[index].create(streamID);
+  audioDataStreams_[index].create(streamID, shk_);
   audioControlHandlers_[index].create(Protocol::UDP, streamID);
 
   return 1;

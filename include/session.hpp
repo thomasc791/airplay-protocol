@@ -48,7 +48,7 @@ private:
   std::string request_, requestType_, title_, msgHeader_, macAddress_, pi_;
   char header_[256];
   std::string sendHeader_;
-  u8Vec_t sendBody_;
+  u8Vec_t sendBody_, connectionBuffer_, bodyVec_, shk_;
   size_t sendHeaderLen_;
   uint32_t streamID = 0;
 

@@ -7,11 +7,11 @@
 #include <cstdint>
 #include <memory>
 
-#define MAX_STREAMS 5
+#define MAX_STREAMS 10
 
 class AudioDataHandler {
 public:
-  AudioDataHandler();
+  AudioDataHandler(u8Vec_t shk);
   ~AudioDataHandler();
 
   uint64_t get_port() { return listener_->get_port(); }
@@ -21,31 +21,32 @@ public:
 private:
   std::unique_ptr<TCPServer> listener_;
   std::atomic<bool> running_{false};
+  u8Vec_t shk_;
 
   void handle_audio_data(int id);
   u8Vec_t read_exact_bytes(int fd, size_t exact_amount);
   uint32_t extract_size_from_header(const u8Vec_t &header);
 };
 
-std::shared_ptr<AudioDataHandler> create_audio_handler();
+std::shared_ptr<AudioDataHandler> create_audio_handler(u8Vec_t shk);
 
 struct StreamSlot {
-  uint64_t streamID;
+  uint64_t streamID = -1;
   bool active = false;
   std::shared_ptr<AudioDataHandler> stream;
 
   int reset() {
     this->stream.reset();
     this->active = false;
-    this->streamID = 0;
+    this->streamID = -1;
 
     return this->stream ? -1 : 1;
   }
-  std::shared_ptr<AudioDataHandler> &create(uint64_t id) {
-    this->stream = create_audio_handler();
-    this->stream->start();
-    this->active = true;
-    this->streamID = id;
+  std::shared_ptr<AudioDataHandler> &create(uint64_t id, u8Vec_t shk) {
+    stream = create_audio_handler(shk);
+    stream->start();
+    active = true;
+    streamID = id;
 
     return this->stream;
   }

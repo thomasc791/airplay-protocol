@@ -1,12 +1,11 @@
 #pragma once
 
+#include "audio_stream.hpp"
 #include "socket.hpp"
 
 #include <atomic>
 #include <cstdint>
 #include <memory>
-
-#define MAX_STREAMS 5
 
 enum class Protocol { UDP, TCP };
 
