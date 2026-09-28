@@ -772,7 +772,11 @@ int SessionHandler::rtsp_teardown() {
   auto dictionary = plistDecoder_->decode(body_, contentLength_).dictVal;
 
   if (plistDecoder_->has_key(dictionary, "streams")) {
-    rtsp_new_stream(dictionary[0].value.arrayVal[0].dictVal);
+    auto streams = plistDecoder_->get(dictionary, "streams");
+    for (auto &stream : streams.arrayVal) {
+      rtsp_new_stream(stream.dictVal);
+    }
+
     rtsp_empty_message();
 
     return 1;
