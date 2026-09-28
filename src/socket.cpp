@@ -72,15 +72,16 @@ TCPServer::TCPServer(std::function<void(int)> handler, std::string tag,
   socket_ = std::make_unique<SocketResource>(SOCK_STREAM, port);
 }
 
-TCPServer::~TCPServer() {
-  running_ = false;
-  if (socket_) {
-    socket_->stop();
-  }
+TCPServer::~TCPServer() { stop(); }
 
-  shutdown(fd_, SHUT_RDWR);
-  close(fd_);
-  fd_ = -1;
+void TCPServer::stop() {
+  running_ = false;
+
+  if (fd_ >= 0) {
+    shutdown(fd_, SHUT_RDWR);
+    close(fd_);
+    fd_ = -1;
+  }
 
   if (loopThread_.joinable()) {
     loopThread_.join();
@@ -91,17 +92,29 @@ TCPServer::~TCPServer() {
 
     for (int client_fd : clientFDs_) {
       shutdown(client_fd, SHUT_RDWR);
+    }
+  }
+
+  for (auto &t : clientThreads_) {
+    if (t.joinable()) {
+      t.join();
+    }
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(clientMutex_);
+
+    for (int client_fd : clientFDs_) {
       close(client_fd);
     }
+
     clientFDs_.clear();
   }
 
-  for (auto &t : clientThreads_)
-    if (t.joinable())
-      t.join();
+  clientThreads_.clear();
 
   if (socket_) {
-    socket_.reset();
+    socket_->stop();
   }
 }
 
@@ -165,15 +178,24 @@ UDPServer::UDPServer(std::function<void(const char *data, size_t length,
   socket_ = std::make_unique<SocketResource>(SOCK_DGRAM, port);
 }
 
-UDPServer::~UDPServer() {
-  if (socket_)
-    socket_->stop();
-  if (loopThread_.joinable())
-    loopThread_.join();
+UDPServer::~UDPServer() { stop(); }
 
-  shutdown(fd_, SHUT_RDWR);
-  close(fd_);
-  fd_ = -1;
+void UDPServer::stop() {
+  running_ = false;
+
+  if (fd_ >= 0) {
+    shutdown(fd_, SHUT_RDWR);
+    close(fd_);
+    fd_ = -1;
+  }
+
+  if (loopThread_.joinable()) {
+    loopThread_.join();
+  }
+
+  if (socket_) {
+    socket_->stop();
+  }
 }
 
 bool UDPServer::start() {

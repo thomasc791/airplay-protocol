@@ -11,6 +11,7 @@ EventHandler::EventHandler() {
 }
 
 EventHandler::~EventHandler() {
+  running_ = false;
   listener_.reset();
   log_event(tag, "Deleting handler.");
 }
@@ -20,6 +21,7 @@ void EventHandler::start() { listener_->start(); };
 void EventHandler::handle_events(int id) {
   running_ = listener_->is_running();
   while (running_) {
+    std::this_thread::yield();
   }
 }
 

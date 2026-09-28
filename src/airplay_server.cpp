@@ -51,9 +51,27 @@ bool AirPlayServer::start() {
   running_ = true;
 
   airplayServer_ = std::make_unique<TCPServer>(callback, "AirPlayServer", 7000);
-  std::thread([this]() { airplayServer_->start(); }).detach();
+
+  if (!airplayServer_->start()) {
+    std::cerr << "Failed to start AirPlay TCP server." << std::endl;
+    airplayServer_.reset();
+    return false;
+  }
 
   return true;
+}
+
+void AirPlayServer::stop() {
+  if (running_) {
+    running_ = false;
+  }
+
+  if (airplayServer_) {
+    airplayServer_.reset();
+  }
+
+  if (mdns_)
+    mdns_->stop();
 }
 
 int AirPlayServer::publish_airplay_service() {
@@ -97,16 +115,6 @@ int AirPlayServer::publish_raop_service() {
   };
   mdns_->publish_service(deviceName_, "_raop._tcp", 5000, txt);
   return 0;
-}
-
-void AirPlayServer::stop() {
-  if (running_) {
-    running_ = false;
-    if (server_thread_.joinable())
-      server_thread_.join();
-  }
-  if (mdns_)
-    mdns_->stop();
 }
 
 void AirPlayServer::handle_client(int clientID) {

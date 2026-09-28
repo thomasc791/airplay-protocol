@@ -42,6 +42,7 @@ public:
   uint64_t get_port() { return socket_->get_port(); }
   bool is_running() { return socket_->is_running(); }
   bool start();
+  void stop();
 
 private:
   int fd_;
@@ -71,6 +72,7 @@ public:
   uint64_t get_port() { return socket_->get_port(); }
   bool is_running() { return socket_->is_running(); }
   bool start();
+  void stop();
 
 private:
   int fd_;
