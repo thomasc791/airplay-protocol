@@ -3,8 +3,11 @@
 
 #include <iostream>
 #include <memory>
+#include <net/if.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
-constexpr std::string tag = "EventHandler";
+constexpr std::string tag = "AudioControl";
 
 AudioControlHandler::AudioControlHandler(Protocol protocol)
     : protocol_(protocol) {
@@ -34,8 +37,14 @@ uint64_t AudioControlHandler::get_port() {
 }
 
 AudioControlHandler::~AudioControlHandler() {
-  tcpListener_.reset();
-  udpListener_.reset();
+  switch (protocol_) {
+  case (Protocol::UDP):
+    udpListener_.reset();
+    break;
+  case (Protocol::TCP):
+    shutdown(fd_, SHUT_RDWR);
+    tcpListener_.reset();
+  }
   log_event(tag, "Deleting handler.");
 }
 
@@ -60,14 +69,14 @@ void AudioControlHandler::handle_udp_controls(const char *data, size_t length,
 }
 
 void AudioControlHandler::handle_tcp_controls(int id) {
-  running_ = tcpListener_->is_running();
-
+  fd_ = id;
   running_ = tcpListener_->is_running();
 
   constexpr size_t BUFFER_SIZE = 4096;
   char buffer[BUFFER_SIZE];
 
   while (running_) {
+    running_ = tcpListener_->is_running();
     ssize_t bytes_read = recv(id, buffer, BUFFER_SIZE, 0);
 
     if (bytes_read > 0) {
@@ -81,6 +90,7 @@ void AudioControlHandler::handle_tcp_controls(int id) {
       break;
     }
   }
+  close(fd_);
 }
 
 int get_key(ControlSlotArray streams, size_t key) {

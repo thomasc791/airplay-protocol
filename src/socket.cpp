@@ -76,6 +76,7 @@ TCPServer::~TCPServer() {
     socket_->stop();
   }
 
+  close(fd_);
   shutdown(fd_, SHUT_RDWR);
 
   // 2. Wait for the background thread to safely exit

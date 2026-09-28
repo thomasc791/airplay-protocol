@@ -20,6 +20,7 @@ public:
 
 private:
   Protocol protocol_;
+  int fd_;
   std::unique_ptr<UDPServer> udpListener_;
   std::unique_ptr<TCPServer> tcpListener_;
   std::atomic<bool> running_{false};

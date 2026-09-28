@@ -155,13 +155,15 @@ void AirPlayServer::handle_client(int clientID) {
       u8Vec_t payload(header.begin(), header.end());
       payload.insert(payload.end(), body.begin(), body.end());
 
-      auto aad = cipherTransporter->set_aad(payload);
-      auto encryptResult = cipherTransporter->encrypt(
-          payload, aad, cipherTransporter->get_write_nonce());
+      if (!payload.empty()) {
+        auto aad = cipherTransporter->set_aad(payload);
+        auto encryptResult = cipherTransporter->encrypt(
+            payload, aad, cipherTransporter->get_write_nonce());
 
-      if (encryptResult.success)
-        send(clientID, encryptResult.ciphertext.data(),
-             encryptResult.ciphertext.size(), 0);
+        if (encryptResult.success)
+          send(clientID, encryptResult.ciphertext.data(),
+               encryptResult.ciphertext.size(), 0);
+      }
     }
   }
   close(clientID);
