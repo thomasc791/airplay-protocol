@@ -3,10 +3,12 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <thread>
+#include <vector>
 
 class SocketResource {
 public:
@@ -50,6 +52,9 @@ private:
   std::string tag_;
   std::function<void(int)> handler_;
   std::unique_ptr<SocketResource> socket_;
+  std::vector<std::thread> clientThreads_;
+  std::vector<int> clientFDs_;
+  std::mutex clientMutex_;
 
   void server_loop();
 };

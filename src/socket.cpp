@@ -5,7 +5,9 @@
 #include <ifaddrs.h>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <sys/socket.h>
 #include <unistd.h>
 
 SocketResource::SocketResource(__socket_type socketType, uint64_t port)
@@ -66,7 +68,7 @@ void SocketResource::stop() {
 
 TCPServer::TCPServer(std::function<void(int)> handler, std::string tag,
                      uint64_t port, std::optional<timeval> recvTimeout)
-    : fd_(-1), tag_(tag), handler_(handler), recvTimeout_(recvTimeout) {
+    : fd_(-1), recvTimeout_(recvTimeout), tag_(tag), handler_(handler) {
   socket_ = std::make_unique<SocketResource>(SOCK_STREAM, port);
 }
 
@@ -76,13 +78,27 @@ TCPServer::~TCPServer() {
     socket_->stop();
   }
 
-  close(fd_);
   shutdown(fd_, SHUT_RDWR);
+  close(fd_);
+  fd_ = -1;
 
-  // 2. Wait for the background thread to safely exit
   if (loopThread_.joinable()) {
     loopThread_.join();
   }
+
+  {
+    std::lock_guard<std::mutex> lock(clientMutex_);
+
+    for (int client_fd : clientFDs_) {
+      shutdown(client_fd, SHUT_RDWR);
+      close(client_fd);
+    }
+    clientFDs_.clear();
+  }
+
+  for (auto &t : clientThreads_)
+    if (t.joinable())
+      t.join();
 
   if (socket_) {
     socket_.reset();
@@ -131,11 +147,14 @@ void TCPServer::server_loop() {
           setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &recvTimeout_.value(),
                      sizeof(recvTimeout_.value()));
         }
-        std::thread(handler_, (client_fd)).detach();
+        {
+          std::lock_guard<std::mutex> lock(clientMutex_);
+          clientFDs_.push_back(client_fd);
+        }
+        clientThreads_.emplace_back(std::thread(handler_, client_fd));
       }
     }
   }
-  close(fd_);
 }
 
 UDPServer::UDPServer(std::function<void(const char *data, size_t length,
@@ -151,6 +170,10 @@ UDPServer::~UDPServer() {
     socket_->stop();
   if (loopThread_.joinable())
     loopThread_.join();
+
+  shutdown(fd_, SHUT_RDWR);
+  close(fd_);
+  fd_ = -1;
 }
 
 bool UDPServer::start() {
@@ -192,5 +215,4 @@ void UDPServer::server_loop() {
       }
     }
   }
-  close(fd_);
 }

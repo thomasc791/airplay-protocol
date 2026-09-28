@@ -122,7 +122,10 @@ int SessionHandler::parse_message() {
       body_ = nullptr;
     }
 
-    std::cout << request_ << std::endl;
+    std::cout << header_str << std::endl;
+    std::cout << chars_to_hex_c((const uint8_t *)body_, contentLength_)
+              << std::endl;
+    ;
 
     if ("/info RTSP/1.0" == title_) {
       rtsp_get_info();
@@ -685,7 +688,7 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
       std::cerr << "Maximum concurrent streams reached!" << std::endl;
     }
 
-    u8Vec_t shk = plistDecoder_->get(dictionary, "shk").dataVal;
+    u8Vec_t shk = plistDecoder_->get(incomingStreamDict, "shk").dataVal;
 
     auto &audioData = audioDataStreams_[index].create(id, shk);
     auto &audioControl = audioControlStreams_[index].create(Protocol::UDP, id);
@@ -718,6 +721,7 @@ u8Vec_t SessionHandler::rtsp_setup_m2(pwVal::Dict dictionary, int streamType) {
   int indexControl = available_stream(audioControlStreams_);
   if (indexAudio == -1 || indexControl == -1) {
     std::cerr << "Maximum concurrent streams reached!" << std::endl;
+    return {};
   }
 
   pwVal::Dict streamDict({

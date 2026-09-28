@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <sys/socket.h>
+#include <unistd.h>
 
 constexpr std::string tag = "AudioHandler";
 
@@ -36,6 +37,8 @@ void AudioDataHandler::handle_audio_data(int id) {
     if (encrypted_audio.empty())
       break;
   }
+  shutdown(id, SHUT_RDWR);
+  close(id);
 }
 
 u8Vec_t AudioDataHandler::read_exact_bytes(int fd, size_t exact_amount) {
