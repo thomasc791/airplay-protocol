@@ -83,6 +83,25 @@ void AudioControlHandler::handle_tcp_controls(int id) {
   }
 }
 
+int get_key(ControlSlotArray streams, size_t key) {
+  for (size_t i = 0; i < streams.size(); i++) {
+    if (streams[i].active && streams[i].streamID == key) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+int available_stream(ControlSlotArray streams) {
+  for (size_t i = 0; i < streams.size(); i++) {
+    if (!streams[i].active) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
 std::shared_ptr<AudioControlHandler>
 create_audio_control_handler(Protocol protocol) {
   return std::make_shared<AudioControlHandler>(protocol);

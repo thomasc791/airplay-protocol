@@ -22,7 +22,6 @@ CryptoHandler::CryptoHandler()
       cipherCtx_(nullptr, EVP_CIPHER_CTX_free) {
   ctx_ = make_ctx(EVP_PKEY_ED25519);
   std::string mac = get_system_mac_address();
-  std::cout << mac << std::endl;
   authTag_ = u8Vec_t(16);
   identifier_ = u8Vec_t(mac.begin(), mac.end());
 

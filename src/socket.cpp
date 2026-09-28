@@ -145,20 +145,28 @@ UDPServer::UDPServer(std::function<void(const char *data, size_t length,
   socket_ = std::make_unique<SocketResource>(SOCK_DGRAM, port);
 }
 
+UDPServer::~UDPServer() {
+  if (socket_)
+    socket_->stop();
+  if (loopThread_.joinable())
+    loopThread_.join();
+}
+
 bool UDPServer::start() {
+  running_ = true;
   socket_->start(tag_);
   fd_ = socket_->get_fd();
 
   std::cout << "[" << tag_ << "] Listening for iOS connections on port "
             << std::dec << int(socket_->get_port()) << "..." << std::endl;
 
-  std::thread([this]() { server_loop(); }).detach();
+  loopThread_ = std::thread([this]() { server_loop(); });
 
   return true;
 }
 
 void UDPServer::server_loop() {
-  while (socket_->is_running()) {
+  while (running_) {
     fd_set readfds;
     FD_ZERO(&readfds);
     FD_SET(fd_, &readfds);

@@ -33,14 +33,14 @@ std::shared_ptr<AudioControlHandler>
 create_audio_control_handler(Protocol protocol);
 
 struct ControlSlot {
-  uint64_t streamID;
+  uint64_t streamID = -1;
   bool active = false;
   std::shared_ptr<AudioControlHandler> stream;
 
   int reset() {
     this->stream.reset();
     this->active = false;
-    this->streamID = 0;
+    this->streamID = -1;
 
     return this->stream ? -1 : 1;
   }
@@ -55,3 +55,6 @@ struct ControlSlot {
 };
 
 typedef std::array<ControlSlot, MAX_STREAMS> ControlSlotArray;
+
+int get_key(ControlSlotArray streams, size_t key);
+int available_stream(ControlSlotArray streams);

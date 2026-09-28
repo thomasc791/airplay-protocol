@@ -13,7 +13,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <ios>
 #include <iostream>
 #include <memory>
 #include <ostream>
@@ -60,7 +59,7 @@ SessionHandler::~SessionHandler() {
   eventHandler_.reset();
   for (auto &s : audioDataStreams_)
     s.reset();
-  for (auto &c : audioControlHandlers_)
+  for (auto &c : audioControlStreams_)
     c.reset();
 
   log_event(tag, "Deleting handler.");
@@ -98,7 +97,6 @@ int SessionHandler::parse_message() {
     int content_len = 0;
     size_t pos = header_str.find("Content-Length:");
     if (pos != std::string::npos) {
-      std::cout << "Found content length" << std::endl;
       sscanf(header_str.c_str() + pos, "Content-Length: %d\r\n", &content_len);
     }
 
@@ -115,9 +113,6 @@ int SessionHandler::parse_message() {
     get_req_type();
     get_title();
 
-    std::cout << header_str << std::endl;
-    std::cout << "content length: " << contentLength_ << std::endl;
-
     if (contentLength_ > 0) {
       bodyVec_ = u8Vec_t(connectionBuffer_.begin() + header_length,
                          connectionBuffer_.begin() + total_length);
@@ -126,6 +121,8 @@ int SessionHandler::parse_message() {
       bodyVec_.clear();
       body_ = nullptr;
     }
+
+    std::cout << request_ << std::endl;
 
     if ("/info RTSP/1.0" == title_) {
       rtsp_get_info();
@@ -152,6 +149,8 @@ int SessionHandler::parse_message() {
       rtsp_get_parameter();
     } else if ("SETPEERS" == requestType_) {
       rtsp_set_peers();
+    } else if ("FLUSHBUFFERED" == requestType_) {
+      rtsp_flush_buffered();
     } else if ("SETRATEANCHORTIME" == requestType_) {
       rtsp_set_rate_anchortime();
     } else {
@@ -227,8 +226,6 @@ int SessionHandler::rtsp_post_pair_setup() {
   tlv8Decoder_->decode();
   auto tlv8State = tlv8Decoder_->read_message(TLV8_STATE);
 
-  std::cout << "Decoding message." << std::endl;
-
   int err = 0;
 
   if (tlv8State.size() != 1) {
@@ -241,8 +238,6 @@ int SessionHandler::rtsp_post_pair_setup() {
 
   u8Vec_t body;
   uint8_t currentState = tlv8Decoder_->read_message(TLV8_STATE)[0];
-
-  printf("Method: %02x\n", currentState);
 
   switch (currentState) {
 
@@ -270,8 +265,6 @@ int SessionHandler::rtsp_post_pair_setup() {
   body = tlv8Encoder_->get_body();
 
   int header_len = create_header("application/octet-stream", body.size());
-
-  std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
 
   sendHeader_ = header_;
   sendHeaderLen_ = header_len;
@@ -308,8 +301,6 @@ int SessionHandler::pair_setup_m4() {
     rtsp_post_pair_error();
     throw std::runtime_error("Error setting BigNum values");
   }
-
-  std::cout << "Set M4 values." << std::endl;
 
   srpHandler_->client_proof();
   if (!srpHandler_->validate_M1()) {
@@ -438,8 +429,6 @@ int SessionHandler::rtsp_post_pair_verify() {
   tlv8Decoder_->decode();
   auto tlv8State = tlv8Decoder_->read_message(TLV8_STATE);
 
-  std::cout << "Decoding message." << std::endl;
-
   int err = 0;
 
   if (tlv8State.size() != 1) {
@@ -452,8 +441,6 @@ int SessionHandler::rtsp_post_pair_verify() {
 
   u8Vec_t body;
   uint8_t currentState = tlv8Decoder_->read_message(TLV8_STATE)[0];
-
-  printf("Method: %02x\n", currentState);
 
   switch (currentState) {
 
@@ -487,8 +474,6 @@ int SessionHandler::rtsp_post_pair_verify() {
   body = tlv8Encoder_->get_body();
 
   int header_len = create_header("application/octet-stream", body.size());
-
-  std::cout << "Sending state: " << std::hex << currentState + 1 << std::endl;
 
   sendHeaderLen_ = header_len;
   sendHeader_ = header_;
@@ -634,12 +619,10 @@ int SessionHandler::rtsp_post_fp_setup() {
 
 int SessionHandler::rtsp_setup() {
   u8Vec_t body;
-
-  std::cout << "Decoding RTSP Setup BPlist" << std::endl;
   auto dictionary = plistDecoder_->decode(body_, contentLength_).dictVal;
 
   if (!plistDecoder_->has_key(dictionary, "streams")) {
-    body = rtsp_setup_m1(dictionary);
+    body = rtsp_setup_event_timing(dictionary);
   } else {
     body = rtsp_setup_media_stream(dictionary);
   }
@@ -651,13 +634,10 @@ int SessionHandler::rtsp_setup() {
   sendHeader_ = header_;
   sendBody_ = body;
 
-  std::cout << header_ << std::endl;
-  std::cout << chars_to_hex(sendBody_) << std::endl;
-
   return 1;
 }
 
-u8Vec_t SessionHandler::rtsp_setup_m1(pwVal::Dict dictionary) {
+u8Vec_t SessionHandler::rtsp_setup_event_timing(pwVal::Dict) {
   using V = PlistEncoder::Value;
 
   ptpHandler_ = create_ptp_timing_handler();
@@ -681,13 +661,9 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
 
   auto streamType = plistDecoder_->get(incomingStreamDict, "type").uintVal;
 
-  std::cout << "Stream type: " << streamType << std::endl;
-
-  for (auto e : dictionary[0].value.arrayVal) {
-    for (auto b : e.dictVal) {
-      std::cout << b.key << std::endl;
-    }
-  }
+  for (auto &e : incomingStreamDict)
+    std::cout << e.key << " ";
+  std::cout << std::endl;
 
   if (streamType == 130) {
     body = rtsp_setup_m2(incomingStreamDict, streamType);
@@ -696,7 +672,8 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
     body = rtsp_setup_m2(incomingStreamDict, streamType);
   } else if (streamType == 103 ||
              plistDecoder_->has_key(incomingStreamDict, "shk")) {
-    streamID = plistDecoder_->get(dictionary, "streamID").uintVal;
+    auto id = get_stream_id();
+    std::cout << "STREAMID: " << id << std::endl;
 
     int index = available_stream(audioDataStreams_);
     if (index == -1) {
@@ -705,18 +682,15 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
 
     u8Vec_t shk = plistDecoder_->get(dictionary, "shk").dataVal;
 
-    auto &audioData = audioDataStreams_[index].create(streamID, shk);
-    auto &audioControl =
-        audioControlHandlers_[index].create(Protocol::UDP, streamID);
+    auto &audioData = audioDataStreams_[index].create(id, shk);
+    auto &audioControl = audioControlStreams_[index].create(Protocol::UDP, id);
 
     pwVal::Dict streamDict(
         {{"type", pwVal::uint(streamType)},
+         {"streamID", pwVal::uint(id)},
          {"dataPort", pwVal::uint(audioData->get_port())},
          {"audioBufferSize", pwVal::uint(0x800000)},
          {"controlPort", pwVal::uint(audioControl->get_port())}});
-
-    if (plistDecoder_->has_key(dictionary, "streamID"))
-      streamDict.push_back({"streamID", pwVal::uint(streamID)});
 
     pwVal::Array streamsArray;
     streamsArray.push_back(pwVal::dict(streamDict));
@@ -732,7 +706,9 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
 
 u8Vec_t SessionHandler::rtsp_setup_m2(pwVal::Dict dictionary, int streamType) {
 
-  streamID = plistDecoder_->get(dictionary, "streamID").uintVal;
+  auto id = get_stream_id();
+  std::cout << "STREAMID: " << id << std::endl;
+
   int index = available_stream(audioDataStreams_);
   if (index == -1) {
     std::cerr << "Maximum concurrent streams reached!" << std::endl;
@@ -743,23 +719,25 @@ u8Vec_t SessionHandler::rtsp_setup_m2(pwVal::Dict dictionary, int streamType) {
   });
 
   if (plistDecoder_->has_key(dictionary, "controlType")) {
-    auto &audioControl =
-        audioControlHandlers_[index].create(Protocol::TCP, streamID);
+    auto &audioControl = audioControlStreams_[index].create(Protocol::TCP, id);
     streamDict.push_back(
         {"controlPort", pwVal::uint(audioControl->get_port())});
+    streamDict.push_back({"streamID", pwVal::uint(id)});
+
+    std::cout << "Created stream with ID: " << id << std::endl;
+
   } else {
     shk_ = plistDecoder_->get(dictionary, "shk").dataVal;
 
-    auto &audioData = audioDataStreams_[index].create(streamID, shk_);
-    auto &audioControl =
-        audioControlHandlers_[index].create(Protocol::UDP, streamID);
+    auto &audioData = audioDataStreams_[index].create(id, shk_);
+    auto &audioControl = audioControlStreams_[index].create(Protocol::UDP, id);
     streamDict.push_back({"dataPort", pwVal::uint(audioData->get_port())});
     streamDict.push_back(
         {"controlPort", pwVal::uint(audioControl->get_port())});
     streamDict.push_back({"audioBufferSize", pwVal::uint(0x800000)});
 
     if (plistDecoder_->has_key(dictionary, "streamID"))
-      streamDict.push_back({"streamID", pwVal::uint(streamID)});
+      streamDict.push_back({"streamID", pwVal::uint(id)});
   }
 
   pwVal::Array streamsArray;
@@ -771,7 +749,7 @@ u8Vec_t SessionHandler::rtsp_setup_m2(pwVal::Dict dictionary, int streamType) {
   return plistEncoder_->serialize(pwVal::dict(rootDict));
 }
 
-u8Vec_t SessionHandler::rtsp_setup_m3(pwVal::Dict dictionary) {
+u8Vec_t SessionHandler::rtsp_setup_m3(pwVal::Dict) {
   using V = PlistEncoder::Value;
 
   std::vector<uint8_t> bplistPayload = plistEncoder_->serialize(
@@ -779,6 +757,58 @@ u8Vec_t SessionHandler::rtsp_setup_m3(pwVal::Dict dictionary) {
                {"eventPort", pwVal::uint(eventHandler_->get_port())}}));
 
   return bplistPayload;
+}
+
+int SessionHandler::rtsp_teardown() {
+  u8Vec_t body;
+  auto dictionary = plistDecoder_->decode(body_, contentLength_).dictVal;
+
+  if (plistDecoder_->has_key(dictionary, "streams")) {
+    rtsp_new_stream(dictionary[0].value.arrayVal[0].dictVal);
+    rtsp_empty_message();
+
+    return 1;
+  }
+  rtsp_empty_message();
+  running_ = false;
+
+  return 1;
+}
+
+int SessionHandler::rtsp_new_stream(PlistEncoder::Value::Dict dictionary) {
+  uint64_t currentID = plistDecoder_->get(dictionary, "streamID").uintVal;
+  uint64_t type = plistDecoder_->get(dictionary, "type").uintVal;
+
+  for (auto k : dictionary) {
+    std::cout << k.key << std::endl;
+    std::cout << k.value.uintVal << std::endl;
+  }
+
+  int indexAudio = -1;
+  int indexControl = -1;
+
+  switch (type) {
+  case 130:
+    indexControl = get_key(audioControlStreams_, currentID);
+    if (indexControl == -1) {
+      std::cerr << "Could not find control stream: " << currentID << "!"
+                << std::endl;
+    }
+    audioControlStreams_[indexControl].reset();
+    break;
+  case 103:
+    indexAudio = get_key(audioDataStreams_, currentID);
+    indexControl = get_key(audioControlStreams_, currentID);
+    if (indexAudio == -1 || indexControl == -1) {
+      std::cerr << "Could not find stream: " << currentID << "!" << std::endl;
+    }
+
+    audioDataStreams_[indexAudio].reset();
+    audioControlStreams_[indexControl].reset();
+    break;
+  }
+
+  return 1;
 }
 
 int SessionHandler::rtsp_record() {
@@ -803,56 +833,7 @@ int SessionHandler::rtsp_post_feedback() { return rtsp_empty_message(); }
 int SessionHandler::rtsp_post_audiomode() { return rtsp_empty_message(); }
 int SessionHandler::rtsp_set_peers() { return rtsp_empty_message(); }
 int SessionHandler::rtsp_set_rate_anchortime() { return rtsp_empty_message(); }
-
-int SessionHandler::rtsp_teardown() {
-  u8Vec_t body;
-
-  std::cout << "Decoding RTSP Setup BPlist" << std::endl;
-  auto dictionary = plistDecoder_->decode(body_, contentLength_).dictVal;
-
-  if (plistDecoder_->has_key(dictionary, "streams")) {
-    rtsp_new_stream(dictionary[0].value.arrayVal[0].dictVal);
-  } else {
-    rtsp_empty_message();
-    running_ = false;
-
-    return 1;
-  }
-
-  int header_len =
-      create_header("application/x-apple-binary-plist", body.size());
-
-  sendHeaderLen_ = header_len;
-  sendHeader_ = header_;
-  sendBody_ = body;
-
-  return 1;
-}
-
-int SessionHandler::rtsp_new_stream(PlistEncoder::Value::Dict dictionary) {
-  uint64_t currentID = plistDecoder_->get(dictionary, "streamID").uintVal;
-
-  for (auto k : dictionary) {
-    std::cout << k.key << std::endl;
-    std::cout << k.value.uintVal << std::endl;
-  }
-
-  for (auto e : audioDataStreams_)
-    std::cout << e.streamID << std::endl;
-
-  int index = get_key(audioDataStreams_, currentID);
-  if (index == -1) {
-    std::cerr << "Could not find stream: " << currentID << "!" << std::endl;
-  }
-
-  audioDataStreams_[index].reset();
-  audioControlHandlers_[index].reset();
-
-  audioDataStreams_[index].create(streamID, shk_);
-  audioControlHandlers_[index].create(Protocol::UDP, streamID);
-
-  return 1;
-}
+int SessionHandler::rtsp_flush_buffered() { return rtsp_empty_message(); }
 
 int SessionHandler::rtsp_post_commands() { return rtsp_empty_message(); }
 

@@ -40,7 +40,7 @@ public:
 
 private:
   StreamSlotArray audioDataStreams_;
-  ControlSlotArray audioControlHandlers_;
+  ControlSlotArray audioControlStreams_;
   std::atomic<bool> verified_{false};
   std::atomic<bool> running_{true};
   int clientID_, messageLength_, contentLength_, CSeq_;
@@ -65,6 +65,7 @@ private:
   std::unique_ptr<PTPTimingHandler> ptpHandler_;
   std::unique_ptr<EventHandler> eventHandler_;
 
+  uint32_t get_stream_id() { return ++streamID; }
   int get_content_length();
   int get_cseq();
   int reset_state();
@@ -100,7 +101,7 @@ private:
   int rtsp_post_feedback();
 
   int rtsp_setup();
-  u8Vec_t rtsp_setup_m1(pwVal::Dict dictionary);
+  u8Vec_t rtsp_setup_event_timing(pwVal::Dict dictionary);
   u8Vec_t rtsp_setup_m2(pwVal::Dict dictionary, int streamType);
   u8Vec_t rtsp_setup_m3(pwVal::Dict dictionary);
   u8Vec_t rtsp_setup_media_stream(pwVal::Dict dictionary);
@@ -113,6 +114,7 @@ private:
 
   int rtsp_teardown();
   int rtsp_new_stream(PlistEncoder::Value::Dict dictionary);
+  int rtsp_flush_buffered();
 
   int rtsp_empty_message();
 

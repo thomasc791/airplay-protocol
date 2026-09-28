@@ -25,7 +25,6 @@ void AudioDataHandler::handle_audio_data(int id) {
   constexpr size_t BUFFER_SIZE = 32768;
   u8Vec_t recv_buffer(BUFFER_SIZE);
   while (running_) {
-    log_event(tag, "Reading Stream header");
     std::vector<uint8_t> header_data = read_exact_bytes(id, 2);
     if (header_data.empty())
       break;
@@ -36,7 +35,6 @@ void AudioDataHandler::handle_audio_data(int id) {
     u8Vec_t encrypted_audio = read_exact_bytes(id, payload_size + 16);
     if (encrypted_audio.empty())
       break;
-    log_event(tag, "Reading Stream data");
   }
 }
 

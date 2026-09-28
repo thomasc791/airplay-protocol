@@ -62,6 +62,8 @@ public:
                 handler,
             std::string tag = "UDPServer", uint64_t port = 0);
 
+  ~UDPServer();
+
   uint64_t get_port() { return socket_->get_port(); }
   bool is_running() { return socket_->is_running(); }
   bool start();
@@ -69,6 +71,8 @@ public:
 private:
   int fd_;
   std::string tag_;
+  std::atomic<bool> running_{false};
+  std::thread loopThread_;
   std::function<void(const char *data, size_t length, sockaddr_storage sender)>
       handler_;
   std::unique_ptr<SocketResource> socket_;
