@@ -122,10 +122,9 @@ int SessionHandler::parse_message() {
       body_ = nullptr;
     }
 
-    std::cout << header_str << std::endl;
-    std::cout << chars_to_hex_c((const uint8_t *)body_, contentLength_)
-              << std::endl;
-    ;
+    // std::cout << header_str << std::endl;
+    // std::cout << chars_to_hex_c((const uint8_t *)body_, contentLength_)
+    //           << std::endl;
 
     if ("/info RTSP/1.0" == title_) {
       rtsp_get_info();

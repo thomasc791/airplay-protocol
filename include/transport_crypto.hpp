@@ -24,9 +24,18 @@ public:
   ~CipherTransporter() = default;
 
   u8Vec_t set_aad(u8Vec_t payload);
+  void set_decryption_key(u8Vec_t dkey);
+  void set_encryption_key(u8Vec_t ekey);
 
   DecryptionResult decrypt_frames(char *buffer, size_t len);
   EncryptionResult encrypt(u8Vec_t payload, u8Vec_t aad, u8Vec_t nonce);
+
+  int decrypt(DecryptionResult &result, u8Vec_t cipher, u8Vec_t aad,
+              u8Vec_t nonce, u8Vec_t tag);
+
+  int decrypt(DecryptionResult &result, const uint8_t *cipher, size_t cipherLen,
+              const uint8_t *aad, size_t aadSize, std::array<uint8_t, 12> nonce,
+              const uint8_t *tag);
 
   u8Vec_t get_body() { return body_; };
   u8Vec_t get_cipher() { return u8Vec_t(body_.begin() + 2, body_.end()); };
@@ -45,9 +54,6 @@ private:
   int set_message(char *buffer, size_t len);
 
   u8Vec_t cipher_length();
-
-  int decrypt(DecryptionResult &result, u8Vec_t cipher, u8Vec_t aad,
-              u8Vec_t nonce, u8Vec_t tag);
 };
 
 std::unique_ptr<CipherTransporter> create_cipher_transporter(u8Vec_t sharedKey);

@@ -9,10 +9,10 @@
 
 CipherTransporter::CipherTransporter(u8Vec_t sk)
     : sharedKey_(sk), readCounter_(0), writeCounter_(0) {
-  decryptionKey_ =
-      hkdf_sha512("Control-Salt", "Control-Write-Encryption-Key", sharedKey_);
-  encryptionKey_ =
-      hkdf_sha512("Control-Salt", "Control-Read-Encryption-Key", sharedKey_);
+  set_encryption_key(
+      hkdf_sha512("Control-Salt", "Control-Write-Encryption-Key", sharedKey_));
+  set_decryption_key(
+      hkdf_sha512("Control-Salt", "Control-Read-Encryption-Key", sharedKey_));
 }
 
 int CipherTransporter::set_message(char *buffer, size_t len) {
@@ -20,6 +20,14 @@ int CipherTransporter::set_message(char *buffer, size_t len) {
                   reinterpret_cast<const uint8_t *>(buffer) + len);
 
   return 1;
+}
+
+void CipherTransporter::set_decryption_key(u8Vec_t dkey) {
+  decryptionKey_ = dkey;
+}
+
+void CipherTransporter::set_encryption_key(u8Vec_t ekey) {
+  encryptionKey_ = ekey;
 }
 
 u8Vec_t CipherTransporter::get_read_nonce() {
@@ -64,11 +72,66 @@ DecryptionResult CipherTransporter::decrypt_frames(char *buffer, size_t len) {
     auto nonce = get_read_nonce();
 
     int a = decrypt(result, cipher, aad, nonce, tag);
+    if (a <= 0) {
+      std::cerr << "Error decrypting frame" << std::endl;
+    }
 
     body_.erase(body_.begin(), body_.begin() + frameSize);
   }
 
   return result;
+}
+
+int CipherTransporter::decrypt(DecryptionResult &result, const uint8_t *cipher,
+                               size_t cipherLen, const uint8_t *aad,
+                               size_t aadLen, std::array<uint8_t, 12> nonce,
+                               const uint8_t *tag) {
+  result.success = false;
+
+  std::unique_ptr<EVP_CIPHER_CTX, EvpCtxDeleter> ctx(EVP_CIPHER_CTX_new());
+  if (!ctx)
+    return -1;
+
+  int outlen = 0;
+  size_t offset = result.plaintext.size();
+  result.plaintext.resize(offset + cipherLen);
+
+  int err = EVP_DecryptInit_ex(ctx.get(), EVP_chacha20_poly1305(), nullptr,
+                               decryptionKey_.data(), nonce.data());
+  if (err <= 0) {
+    std::cerr << "Error initialising decryption" << std::endl;
+    return err;
+  }
+
+  err = EVP_DecryptUpdate(ctx.get(), nullptr, &outlen, aad, aadLen);
+  if (err <= 0) {
+    std::cerr << "Error setting AAD" << std::endl;
+    return err;
+  }
+
+  err = EVP_DecryptUpdate(ctx.get(), result.plaintext.data() + offset, &outlen,
+                          cipher, cipherLen);
+  if (err <= 0) {
+    std::cerr << "Error setting result text" << std::endl;
+    return err;
+  }
+  err = EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_AEAD_SET_TAG, 16, (void *)tag);
+  if (err <= 0) {
+    std::cerr << "Error setting control tag" << std::endl;
+    return err;
+  }
+
+  err =
+      EVP_DecryptFinal_ex(ctx.get(), result.plaintext.data() + offset, &outlen);
+
+  if (err <= 0) {
+    std::cerr << "Error decrypting message" << std::endl;
+    return err;
+  }
+
+  result.success = true;
+
+  return err;
 }
 
 int CipherTransporter::decrypt(DecryptionResult &result, u8Vec_t cipher,
@@ -84,7 +147,7 @@ int CipherTransporter::decrypt(DecryptionResult &result, u8Vec_t cipher,
   result.plaintext.resize(offset + cipher.size());
 
   int err = EVP_DecryptInit_ex(ctx.get(), EVP_chacha20_poly1305(), nullptr,
-                               decryptionKey_.data(), nonce.data());
+                               encryptionKey_.data(), nonce.data());
   err = EVP_DecryptUpdate(ctx.get(), nullptr, &outlen, aad.data(), aad.size());
   err = EVP_DecryptUpdate(ctx.get(), result.plaintext.data() + offset, &outlen,
                           cipher.data(), cipher.size());
@@ -114,7 +177,7 @@ EncryptionResult CipherTransporter::encrypt(u8Vec_t payload, u8Vec_t aad,
   result.tag.resize(16);
 
   int err = EVP_EncryptInit_ex(ctx.get(), EVP_chacha20_poly1305(), nullptr,
-                               encryptionKey_.data(), nonce.data());
+                               decryptionKey_.data(), nonce.data());
   err = EVP_EncryptUpdate(ctx.get(), nullptr, &outlen, aad.data(), aad.size());
   err = EVP_EncryptUpdate(ctx.get(), result.ciphertext.data(), &outlen,
                           payload.data(), payload.size());

@@ -1,8 +1,11 @@
 #include "audio_stream.hpp"
 #include "crypto.hpp"
+#include "transport_crypto.hpp"
 #include "utils.hpp"
 
-#include <memory>
+#include <cstddef>
+#include <cstring>
+#include <iostream>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -23,31 +26,58 @@ void AudioDataHandler::start() { listener_->start(); };
 void AudioDataHandler::handle_audio_data(int id) {
   running_ = listener_->is_running();
 
+  auto cipher = create_cipher_transporter(shk_);
+  cipher->set_decryption_key(shk_);
+
+  DecryptionResult result;
+
   constexpr size_t BUFFER_SIZE = 32768;
-  u8Vec_t recv_buffer(BUFFER_SIZE);
+  u8Vec_t receiveBuffer(BUFFER_SIZE);
+  u8Vec_t tag(16);
+  std::array<uint8_t, 12> nonce = {0};
+
+  size_t audioSize = 0;
+
   while (running_) {
-    std::vector<uint8_t> header_data = read_exact_bytes(id, 2);
-    if (header_data.empty())
+    read_exact_bytes(id, receiveBuffer, 2, 0);
+
+    uint16_t payload_size = (static_cast<uint16_t>(receiveBuffer[0]) << 8) |
+                            static_cast<uint16_t>(receiveBuffer[1]);
+
+    audioSize = payload_size - 38;
+
+    size_t encryptAudioOffset =
+        read_exact_bytes(id, receiveBuffer, payload_size - 2, 2);
+
+    if (2 != encryptAudioOffset)
       break;
 
-    uint16_t payload_size = (static_cast<uint16_t>(header_data[1]) << 8) |
-                            static_cast<uint16_t>(header_data[0]);
+    std::memcpy(tag.data(), receiveBuffer.data() + payload_size - 24, 16);
+    std::memcpy(nonce.data() + 4, receiveBuffer.data() + payload_size - 8, 8);
 
-    u8Vec_t encrypted_audio = read_exact_bytes(id, payload_size + 16);
-    if (encrypted_audio.empty())
-      break;
+    auto plainText = cipher->decrypt(
+        result, receiveBuffer.data() + 14, audioSize, receiveBuffer.data() + 6,
+        8, nonce, receiveBuffer.data() + payload_size - 24);
+
+    std::cout << chars_to_hex(
+                     u8Vec_t(receiveBuffer.begin(), receiveBuffer.begin() + 2))
+              << std::endl;
+    std::cout << chars_to_hex(u8Vec_t(receiveBuffer.begin() + 2,
+                                      receiveBuffer.begin() + 10))
+              << std::endl;
+    // }
   }
   shutdown(id, SHUT_RDWR);
   close(id);
 }
 
-u8Vec_t AudioDataHandler::read_exact_bytes(int fd, size_t exact_amount) {
-  std::vector<uint8_t> buffer(exact_amount);
+size_t AudioDataHandler::read_exact_bytes(int fd, u8Vec_t &recvBuffer,
+                                          size_t exact_amount, size_t offset) {
   size_t total_read = 0;
 
   while (total_read < exact_amount) {
-    ssize_t bytes =
-        recv(fd, buffer.data() + total_read, exact_amount - total_read, 0);
+    ssize_t bytes = recv(fd, recvBuffer.data() + offset + total_read,
+                         exact_amount - total_read, 0);
 
     if (bytes > 0) {
       total_read += bytes;
@@ -57,7 +87,7 @@ u8Vec_t AudioDataHandler::read_exact_bytes(int fd, size_t exact_amount) {
       return {};
     }
   }
-  return buffer;
+  return offset;
 }
 
 uint32_t AudioDataHandler::extract_size_from_header(const u8Vec_t &header) {

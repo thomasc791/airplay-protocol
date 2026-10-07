@@ -24,7 +24,8 @@ private:
   u8Vec_t shk_;
 
   void handle_audio_data(int id);
-  u8Vec_t read_exact_bytes(int fd, size_t exact_amount);
+  size_t read_exact_bytes(int fd, u8Vec_t &recvBuffer, size_t exact_amount,
+                          size_t offset);
   uint32_t extract_size_from_header(const u8Vec_t &header);
 };
 
