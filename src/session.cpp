@@ -1,6 +1,7 @@
 #include "session.hpp"
 
 #include "audio_control.hpp"
+#include "audio_player.hpp"
 #include "audio_stream.hpp"
 #include "crypto.hpp"
 #include "pairing_manager.hpp"
@@ -41,6 +42,7 @@ SessionHandler::SessionHandler(int client_fd, std::string macAddress,
   tlv8Encoder_ = create_tlv8_encoder();
   cryptoHandler_ = create_crypto_handler();
   srpHandler_ = create_srp_handler();
+  audioPlayer_ = create_audio_player();
 }
 
 SessionHandler::~SessionHandler() {
@@ -57,6 +59,7 @@ SessionHandler::~SessionHandler() {
   fairPlayWrapper_.reset();
   ptpHandler_.reset();
   eventHandler_.reset();
+  audioPlayer_.reset();
   for (auto &s : audioDataStreams_)
     s.reset();
   for (auto &c : audioControlStreams_)
@@ -637,10 +640,6 @@ int SessionHandler::rtsp_setup() {
   sendHeader_ = header_;
   sendBody_ = body;
 
-  std::cout << header_ << std::endl;
-  std::cout << chars_to_hex_c((const uint8_t *)body_, contentLength_)
-            << std::endl;
-
   return 1;
 }
 
@@ -668,9 +667,12 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
 
   auto streamType = plistDecoder_->get(incomingStreamDict, "type").uintVal;
 
-  for (auto &e : incomingStreamDict)
-    std::cout << e.key << " ";
-  std::cout << std::endl;
+  for (auto &e : incomingStreamDict) {
+    if (e.key == "audioFormat") {
+      std::cout << e.key << std::endl;
+      std::cout << e.value.uintVal << std::endl;
+    }
+  }
 
   if (streamType == 130) {
     body = rtsp_setup_m2(incomingStreamDict, streamType);
@@ -688,8 +690,11 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
     }
 
     u8Vec_t shk = plistDecoder_->get(incomingStreamDict, "shk").dataVal;
+    uint64_t audioFormat =
+        plistDecoder_->get(incomingStreamDict, "audioFormat").uintVal;
 
-    auto &audioData = audioDataStreams_[index].create(id, shk);
+    auto &audioData =
+        audioDataStreams_[index].create(audioPlayer_, id, audioFormat, shk);
     auto &audioControl = audioControlStreams_[index].create(Protocol::UDP, id);
 
     pwVal::Dict streamDict(
@@ -738,8 +743,10 @@ u8Vec_t SessionHandler::rtsp_setup_m2(pwVal::Dict dictionary, int streamType) {
 
   } else {
     shk_ = plistDecoder_->get(dictionary, "shk").dataVal;
+    auto audioFormat = plistDecoder_->get(dictionary, "audioFormat").uintVal;
 
-    auto &audioData = audioDataStreams_[indexAudio].create(id, shk_);
+    auto &audioData = audioDataStreams_[indexAudio].create(audioPlayer_, id,
+                                                           audioFormat, shk_);
     auto &audioControl =
         audioControlStreams_[indexControl].create(Protocol::UDP, id);
     streamDict.push_back({"dataPort", pwVal::uint(audioData->get_port())});
@@ -793,11 +800,6 @@ int SessionHandler::rtsp_teardown() {
 int SessionHandler::rtsp_new_stream(PlistEncoder::Value::Dict dictionary) {
   uint64_t currentID = plistDecoder_->get(dictionary, "streamID").uintVal;
   uint64_t type = plistDecoder_->get(dictionary, "type").uintVal;
-
-  for (auto k : dictionary) {
-    std::cout << k.key << std::endl;
-    std::cout << k.value.uintVal << std::endl;
-  }
 
   int indexAudio = -1;
   int indexControl = -1;

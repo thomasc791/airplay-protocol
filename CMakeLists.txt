@@ -11,13 +11,17 @@ add_compile_options(-Wall -Wextra -O2)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(ALSA REQUIRED)
 
 pkg_check_modules(AVAHI REQUIRED avahi-client)
+pkg_check_modules(FFMPEG REQUIRED libavcodec libavutil libswresample)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${OPENSSL_INCLUDE_DIR}
     ${AVAHI_INCLUDE_DIRS}
+    ${FFMPEG_INCLUDE_DIRS}
+    ${ALSA_INCLUDE_DIRS}
 )
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/playfair)
@@ -36,6 +40,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenSSL::Crypto
     OpenSSL::SSL
     ${AVAHI_LIBRARIES}
+    ${FFMPEG_LIBRARIES}
+    ${ALSA_LIBRARIES}
     playfair
     plist
     tlv8

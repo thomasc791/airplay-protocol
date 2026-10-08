@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audio_player.hpp"
 #include "crypto.hpp"
 #include "socket.hpp"
 
@@ -11,7 +12,8 @@
 
 class AudioDataHandler {
 public:
-  AudioDataHandler(u8Vec_t shk);
+  AudioDataHandler(const std::shared_ptr<AudioPlayer> &audioPlayer,
+                   uint64_t format, u8Vec_t shk);
   ~AudioDataHandler();
 
   uint64_t get_port() { return listener_->get_port(); }
@@ -21,15 +23,21 @@ public:
 private:
   std::unique_ptr<TCPServer> listener_;
   std::atomic<bool> running_{false};
+
+  std::shared_ptr<AudioPlayer> audioPlayer_;
+
+  uint64_t format_;
   u8Vec_t shk_;
 
   void handle_audio_data(int id);
-  size_t read_exact_bytes(int fd, u8Vec_t &recvBuffer, size_t exact_amount,
-                          size_t offset);
+  int read_exact_bytes(int fd, u8Vec_t &recvBuffer, size_t exact_amount,
+                       size_t offset);
   uint32_t extract_size_from_header(const u8Vec_t &header);
 };
 
-std::shared_ptr<AudioDataHandler> create_audio_handler(u8Vec_t shk);
+std::shared_ptr<AudioDataHandler>
+create_audio_handler(const std::shared_ptr<AudioPlayer> &audioPlayer_,
+                     uint64_t format, u8Vec_t shk);
 
 struct StreamSlot {
   uint64_t streamID = -1;
@@ -43,8 +51,10 @@ struct StreamSlot {
 
     return this->stream ? -1 : 1;
   }
-  std::shared_ptr<AudioDataHandler> &create(uint64_t id, u8Vec_t shk) {
-    stream = create_audio_handler(shk);
+  std::shared_ptr<AudioDataHandler> &
+  create(const std::shared_ptr<AudioPlayer> &audioPlayer, uint64_t id,
+         uint64_t format, u8Vec_t shk) {
+    stream = create_audio_handler(audioPlayer, format, shk);
     stream->start();
     active = true;
     streamID = id;

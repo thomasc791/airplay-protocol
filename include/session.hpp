@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio_control.hpp"
+#include "audio_player.hpp"
 #include "audio_stream.hpp"
 #include "crypto.hpp"
 #include "event.hpp"
@@ -56,14 +57,16 @@ private:
   std::unique_ptr<PlistDecoder> plistDecoder_;
   std::unique_ptr<SRPHandler> srpHandler_;
   std::unique_ptr<CryptoHandler> cryptoHandler_;
-  std::shared_ptr<FeatureFlags> featureFlags_;
-  std::shared_ptr<StatusFlags> statusFlags_;
   std::unique_ptr<TLV8Decoder> tlv8Decoder_;
   std::unique_ptr<TLV8Encoder> tlv8Encoder_;
-  std::shared_ptr<PairingManager> pairingManager_;
   std::unique_ptr<FairPlayWrapper> fairPlayWrapper_;
   std::unique_ptr<PTPTimingHandler> ptpHandler_;
   std::unique_ptr<EventHandler> eventHandler_;
+
+  std::shared_ptr<FeatureFlags> featureFlags_;
+  std::shared_ptr<StatusFlags> statusFlags_;
+  std::shared_ptr<PairingManager> pairingManager_;
+  std::shared_ptr<AudioPlayer> audioPlayer_;
 
   uint32_t get_stream_id() { return ++streamID; }
   int get_content_length();

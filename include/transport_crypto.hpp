@@ -5,6 +5,7 @@
 
 struct DecryptionResult {
   u8Vec_t plaintext;
+  size_t size;
   bool success;
 };
 

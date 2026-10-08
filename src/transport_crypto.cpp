@@ -92,7 +92,8 @@ int CipherTransporter::decrypt(DecryptionResult &result, const uint8_t *cipher,
   if (!ctx)
     return -1;
 
-  int outlen = 0;
+  int updateLen = 0;
+  int finalLen = 0;
   size_t offset = result.plaintext.size();
   result.plaintext.resize(offset + cipherLen);
 
@@ -103,14 +104,14 @@ int CipherTransporter::decrypt(DecryptionResult &result, const uint8_t *cipher,
     return err;
   }
 
-  err = EVP_DecryptUpdate(ctx.get(), nullptr, &outlen, aad, aadLen);
+  err = EVP_DecryptUpdate(ctx.get(), nullptr, &updateLen, aad, aadLen);
   if (err <= 0) {
     std::cerr << "Error setting AAD" << std::endl;
     return err;
   }
 
-  err = EVP_DecryptUpdate(ctx.get(), result.plaintext.data() + offset, &outlen,
-                          cipher, cipherLen);
+  err = EVP_DecryptUpdate(ctx.get(), result.plaintext.data() + offset,
+                          &updateLen, cipher, cipherLen);
   if (err <= 0) {
     std::cerr << "Error setting result text" << std::endl;
     return err;
@@ -121,8 +122,8 @@ int CipherTransporter::decrypt(DecryptionResult &result, const uint8_t *cipher,
     return err;
   }
 
-  err =
-      EVP_DecryptFinal_ex(ctx.get(), result.plaintext.data() + offset, &outlen);
+  err = EVP_DecryptFinal_ex(
+      ctx.get(), result.plaintext.data() + offset + updateLen, &finalLen);
 
   if (err <= 0) {
     std::cerr << "Error decrypting message" << std::endl;
@@ -130,6 +131,7 @@ int CipherTransporter::decrypt(DecryptionResult &result, const uint8_t *cipher,
   }
 
   result.success = true;
+  result.size = updateLen + finalLen;
 
   return err;
 }
