@@ -21,11 +21,17 @@ AudioPlayer::AudioPlayer() {
   playbackThread_ = std::thread([this]() { this->playback_loop(); });
 }
 
-AudioPlayer::~AudioPlayer() {
-  running_ = false;
-
+void AudioPlayer::stop() {
+  {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+    running_ = false;
+  }
   dataAvailableCV_.notify_all();
   freeAvailableCV_.notify_all();
+}
+
+AudioPlayer::~AudioPlayer() {
+  stop();
 
   if (playbackThread_.joinable()) {
     playbackThread_.join();
@@ -33,13 +39,13 @@ AudioPlayer::~AudioPlayer() {
   log_event(tag, "Deleted handler.");
 }
 
-std::vector<int16_t> AudioPlayer::borrow_buffer() {
+std::optional<std::vector<int16_t>> AudioPlayer::borrow_buffer() {
   std::unique_lock<std::mutex> lock(poolMutex_);
   freeAvailableCV_.wait(lock,
                         [this] { return !freeQueue_.empty() || !running_; });
 
   if (!running_) {
-    return std::vector<int16_t>();
+    return std::nullopt;
   }
 
   auto buffer = std::move(freeQueue_.front());

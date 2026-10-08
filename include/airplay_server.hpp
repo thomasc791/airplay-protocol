@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audio_player.hpp"
 #include "flags.hpp"
 #include "hal/mdns_service.hpp"
 #include "pairing_manager.hpp"
@@ -24,6 +25,7 @@ private:
   std::shared_ptr<StatusFlags> statusFlags_;
   std::shared_ptr<PairingManager> pairingManager_;
   std::unique_ptr<TCPServer> airplayServer_;
+  std::shared_ptr<AudioPlayer> audioPlayer_;
 
   int create_airplay_service();
   int publish_airplay_service();

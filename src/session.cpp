@@ -26,13 +26,14 @@ constexpr std::string tag = "SessionHandler";
 
 SessionHandler::SessionHandler(int client_fd, std::string macAddress,
                                std::string pi,
+                               const std::shared_ptr<AudioPlayer> &audioPlayer,
                                std::shared_ptr<FeatureFlags> featureFlags,
                                std::shared_ptr<StatusFlags> statusFlags,
                                std::shared_ptr<PairingManager> pairingManager)
     : running_{true}, clientID_(client_fd), contentLength_(), CSeq_(),
       bodyBuffer_(nullptr), msg_(nullptr), macAddress_(macAddress), pi_(pi),
       header_{}, featureFlags_(featureFlags), statusFlags_(statusFlags),
-      pairingManager_(pairingManager) {
+      pairingManager_(pairingManager), audioPlayer_(audioPlayer) {
   std::cout << "Created RTSP parser, listening to client with ID: " << client_fd
             << std::endl;
 
@@ -42,10 +43,12 @@ SessionHandler::SessionHandler(int client_fd, std::string macAddress,
   tlv8Encoder_ = create_tlv8_encoder();
   cryptoHandler_ = create_crypto_handler();
   srpHandler_ = create_srp_handler();
-  audioPlayer_ = create_audio_player();
 }
 
 SessionHandler::~SessionHandler() {
+  if (audioPlayer_) {
+    audioPlayer_->stop();
+  }
   free(bodyBuffer_);
   plistEncoder_.reset();
   plistDecoder_.reset();
@@ -1024,9 +1027,11 @@ int SessionHandler::create_header() {
 
 std::shared_ptr<SessionHandler>
 create_rtsp_parser(int clientID, std::string macAddress, std::string pi,
+                   const std::shared_ptr<AudioPlayer> &audioPlayer,
                    std::shared_ptr<FeatureFlags> featureFlags,
                    std::shared_ptr<StatusFlags> statusFlags,
                    std::shared_ptr<PairingManager> pairingManager) {
-  return std::make_shared<SessionHandler>(
-      clientID, macAddress, pi, featureFlags, statusFlags, pairingManager);
+  return std::make_shared<SessionHandler>(clientID, macAddress, pi, audioPlayer,
+                                          featureFlags, statusFlags,
+                                          pairingManager);
 }

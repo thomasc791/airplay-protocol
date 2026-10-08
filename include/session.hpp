@@ -23,6 +23,7 @@
 class SessionHandler {
 public:
   SessionHandler(int client_fd, std::string macAddress, std::string pi,
+                 const std::shared_ptr<AudioPlayer> &audioPlayer,
                  std::shared_ptr<FeatureFlags> featureFlags,
                  std::shared_ptr<StatusFlags> statusFlags,
                  std::shared_ptr<PairingManager> pairingManager);
@@ -126,6 +127,7 @@ private:
 
 std::shared_ptr<SessionHandler>
 create_rtsp_parser(int clientID, std::string macAddress, std::string pi,
+                   const std::shared_ptr<AudioPlayer> &audioPlayer,
                    std::shared_ptr<FeatureFlags> featureFlags,
                    std::shared_ptr<StatusFlags> statusFlags,
                    std::shared_ptr<PairingManager> pairingManager);

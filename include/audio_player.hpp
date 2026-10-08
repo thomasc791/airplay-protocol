@@ -10,8 +10,8 @@ public:
   AudioPlayer();
   ~AudioPlayer();
 
-  void push_audio(const std::vector<uint16_t> &pcm);
-  std::vector<int16_t> borrow_buffer();
+  std::optional<std::vector<int16_t>> borrow_buffer();
+  void stop();
   void queue_ready_buffer(std::vector<int16_t> pcm);
   void return_to_free_pool(std::vector<int16_t> buffer);
 

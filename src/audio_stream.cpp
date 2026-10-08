@@ -93,8 +93,12 @@ void AudioDataHandler::handle_audio_data(int id) {
       continue;
     }
 
-    pcm = audioPlayer_->borrow_buffer();
+    auto borrowed = audioPlayer_->borrow_buffer();
+    if (!borrowed)
+      break;
+    pcm = std::move(*borrowed);
     pcm.clear();
+
     if (audioDecoder->play_audio(result.plaintext.data(), result.size, pcm) <
         0) {
       audioPlayer_->return_to_free_pool(std::move(pcm));

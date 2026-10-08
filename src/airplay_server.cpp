@@ -23,6 +23,7 @@ AirPlayServer::AirPlayServer(const std::string &device_name, uint16_t port)
 
   deviceID_ = get_system_mac_address();
   pairingManager_ = create_pairing_manager();
+  audioPlayer_ = create_audio_player();
 
   pi_ = "202e8e4d-fd93-45da-af09-26850b417ad6";
 }
@@ -121,8 +122,9 @@ void AirPlayServer::handle_client(int clientID) {
   std::cout << "Created new RTSP handler for client with ID: " << clientID
             << std::endl
             << "Starting new RTSP parser..." << std::endl;
-  auto sessionHandler = create_rtsp_parser(
-      clientID, deviceID_, pi_, featureFlags_, statusFlags_, pairingManager_);
+  auto sessionHandler =
+      create_rtsp_parser(clientID, deviceID_, pi_, audioPlayer_, featureFlags_,
+                         statusFlags_, pairingManager_);
   std::unique_ptr<CipherTransporter> cipherTransporter;
 
   char buffer[2048] = {0};
