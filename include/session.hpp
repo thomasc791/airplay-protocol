@@ -53,6 +53,7 @@ private:
   u8Vec_t sendBody_, connectionBuffer_, bodyVec_, shk_;
   size_t sendHeaderLen_;
   uint32_t streamID = 0;
+  uint32_t connectionID_ = 0;
 
   std::unique_ptr<PlistEncoder> plistEncoder_;
   std::unique_ptr<PlistDecoder> plistDecoder_;

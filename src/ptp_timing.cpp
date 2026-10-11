@@ -11,7 +11,7 @@ PTPTimingHandler::PTPTimingHandler() {
                          sockaddr_storage sender) {
     this->handle_ptp_timing(data, length, sender);
   };
-  listener_ = std::make_unique<UDPServer>(callback, "PTPTimingHandler", 31900);
+  listener_ = std::make_unique<UDPServer>(callback, "PTPTimingHandler", 0);
 }
 
 PTPTimingHandler::~PTPTimingHandler() {

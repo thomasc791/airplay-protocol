@@ -1,13 +1,11 @@
 #include "audio_player.hpp"
 #include "utils.hpp"
 
-#include <fstream>
+#include <alsa/asoundlib.h>
 #include <iostream>
 #include <mutex>
 #include <queue>
 #include <vector>
-
-#include <alsa/asoundlib.h>
 
 constexpr std::string tag = "AudioPlayer";
 
@@ -67,55 +65,54 @@ void AudioPlayer::queue_ready_buffer(std::vector<int16_t> pcm) {
   dataAvailableCV_.notify_one();
 }
 
-void AudioPlayer::playback_loop() {
-  snd_pcm_t *pcm_handle = nullptr;
-  int err = snd_pcm_open(&pcm_handle, "plughw:1,0", SND_PCM_STREAM_PLAYBACK, 0);
+int AudioPlayer::prepare() {
+  int err =
+      snd_pcm_open(&pcm_handle_, "plughw:1,0", SND_PCM_STREAM_PLAYBACK, 0);
   if (err < 0) {
     std::cerr << "ALSA Error: Could not open audio device: "
               << snd_strerror(err) << std::endl;
+    return err;
+  }
+
+  snd_pcm_set_params(pcm_handle_, SND_PCM_FORMAT_S16_LE,
+                     SND_PCM_ACCESS_RW_INTERLEAVED, 2, 44100, 1, 500000);
+
+  return err;
+}
+
+void AudioPlayer::playback_loop() {
+  if (prepare()) {
     return;
   }
 
-  snd_pcm_set_params(pcm_handle, SND_PCM_FORMAT_S16_LE,
-                     SND_PCM_ACCESS_RW_INTERLEAVED, 2, 44100, 1, 500000);
-
   while (running_) {
-    std::vector<int16_t> hardwareChunk_;
-
     {
       std::unique_lock<std::mutex> lock(poolMutex_);
-      dataAvailableCV_.wait(
-          lock, [this] { return !readyQueue_.empty() || !running_; });
+
+      if (flush_) {
+        if (pcm_handle_) {
+          snd_pcm_drop(pcm_handle_);
+          snd_pcm_prepare(pcm_handle_);
+        }
+        flush_ = false;
+      }
+      dataAvailableCV_.wait(lock, [this] {
+        return (!readyQueue_.empty() && !paused_) || !running_ || flush_;
+      });
 
       if (!running_) {
         break;
+      }
+
+      if (flush_) {
+        continue;
       }
 
       hardwareChunk_ = std::move(readyQueue_.front());
       readyQueue_.pop();
     }
 
-    long signal_sum = 0;
-    for (size_t i = 0; i < std::min<size_t>(100, hardwareChunk_.size()); ++i) {
-      signal_sum += std::abs(hardwareChunk_[i]);
-    }
-
-    if (signal_sum == 0) {
-      std::cout << "Warning: ALSA received absolute silence (0 variance)."
-                << std::endl;
-    }
-
-    int frames = hardwareChunk_.size() / 2;
-    snd_pcm_sframes_t written =
-        snd_pcm_writei(pcm_handle, hardwareChunk_.data(), frames);
-
-    if (written < 0) {
-      written = snd_pcm_recover(pcm_handle, written, 0);
-      if (written < 0) {
-        std::cerr << "ALSA Write Failed/Unrecoverable: "
-                  << snd_strerror(written) << std::endl;
-      }
-    }
+    play();
 
     {
       std::lock_guard<std::mutex> lock(poolMutex_);
@@ -124,13 +121,67 @@ void AudioPlayer::playback_loop() {
       freeAvailableCV_.notify_one();
     }
   }
-  if (pcm_handle) {
-    snd_pcm_drop(pcm_handle);
-    snd_pcm_close(pcm_handle);
+  if (pcm_handle_) {
+    snd_pcm_drop(pcm_handle_);
+    snd_pcm_close(pcm_handle_);
   }
 }
 
-void AudioPlayer::play() {}
+void AudioPlayer::pause() {
+  std::lock_guard<std::mutex> lock(poolMutex_);
+  paused_ = true;
+  flush_ = true;
+
+  dataAvailableCV_.notify_all();
+}
+
+void AudioPlayer::resume() {
+  std::lock_guard<std::mutex> lock(poolMutex_);
+  paused_ = false;
+
+  dataAvailableCV_.notify_all();
+}
+
+void AudioPlayer::flush() {
+  std::lock_guard<std::mutex> lock(poolMutex_);
+
+  flush_ = true;
+
+  while (!readyQueue_.empty()) {
+    auto buffer = std::move(readyQueue_.front());
+    readyQueue_.pop();
+
+    buffer.clear();
+    freeQueue_.push(std::move(buffer));
+  }
+
+  freeAvailableCV_.notify_all();
+  dataAvailableCV_.notify_all();
+}
+
+void AudioPlayer::play() {
+  long signal_sum = 0;
+  for (size_t i = 0; i < std::min<size_t>(100, hardwareChunk_.size()); ++i) {
+    signal_sum += std::abs(hardwareChunk_[i]);
+  }
+
+  if (signal_sum == 0) {
+    std::cout << "Warning: ALSA received absolute silence (0 variance)."
+              << std::endl;
+  }
+
+  int frames = hardwareChunk_.size() / 2;
+  snd_pcm_sframes_t written =
+      snd_pcm_writei(pcm_handle_, hardwareChunk_.data(), frames);
+
+  if (written < 0) {
+    written = snd_pcm_recover(pcm_handle_, written, 0);
+    if (written < 0) {
+      std::cerr << "ALSA Write Failed/Unrecoverable: " << snd_strerror(written)
+                << std::endl;
+    }
+  }
+}
 
 std::shared_ptr<AudioPlayer> create_audio_player() {
   return std::make_shared<AudioPlayer>();

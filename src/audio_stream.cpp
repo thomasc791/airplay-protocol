@@ -55,8 +55,6 @@ void AudioDataHandler::handle_audio_data(int id) {
   size_t audioSize = 0;
 
   while (running_) {
-    running_ = listener_->is_running();
-
     int offset = read_exact_bytes(id, receiveBuffer, 2, 0);
     if (0 >= offset)
       break;

@@ -18,6 +18,7 @@
 #include <memory>
 #include <ostream>
 #include <stdexcept>
+#include <string>
 #include <sys/socket.h>
 #include <utility>
 #include <vector>
@@ -46,9 +47,6 @@ SessionHandler::SessionHandler(int client_fd, std::string macAddress,
 }
 
 SessionHandler::~SessionHandler() {
-  if (audioPlayer_) {
-    audioPlayer_->stop();
-  }
   free(bodyBuffer_);
   plistEncoder_.reset();
   plistDecoder_.reset();
@@ -128,7 +126,7 @@ int SessionHandler::parse_message() {
       body_ = nullptr;
     }
 
-    // std::cout << header_str << std::endl;
+    std::cout << request_ << std::endl;
     // std::cout << chars_to_hex_c((const uint8_t *)body_, contentLength_)
     //           << std::endl;
 
@@ -784,6 +782,8 @@ int SessionHandler::rtsp_teardown() {
   u8Vec_t body;
   auto dictionary = plistDecoder_->decode(body_, contentLength_).dictVal;
 
+  log_event(std::to_string(clientID_), "TEARDOWN");
+
   if (plistDecoder_->has_key(dictionary, "streams")) {
     auto streams = plistDecoder_->get(dictionary, "streams");
     for (auto &stream : streams.arrayVal) {
@@ -854,8 +854,34 @@ int SessionHandler::rtsp_record() {
 int SessionHandler::rtsp_post_feedback() { return rtsp_empty_message(); }
 int SessionHandler::rtsp_post_audiomode() { return rtsp_empty_message(); }
 int SessionHandler::rtsp_set_peers() { return rtsp_empty_message(); }
-int SessionHandler::rtsp_set_rate_anchortime() { return rtsp_empty_message(); }
-int SessionHandler::rtsp_flush_buffered() { return rtsp_empty_message(); }
+
+int SessionHandler::rtsp_set_rate_anchortime() {
+  auto dictionary = plistDecoder_->decode(body_, contentLength_).dictVal;
+
+  if (!plistDecoder_->has_key(dictionary, "rate")) {
+    return rtsp_empty_message();
+  }
+
+  auto rate = plistDecoder_->get(dictionary, "rate").uintVal;
+  log_event("ANCHORRATE", std::to_string(rate));
+
+  switch (rate) {
+
+  case 0x0:
+    audioPlayer_->pause();
+    break;
+  case 0x1:
+    audioPlayer_->resume();
+    break;
+  }
+
+  return rtsp_empty_message();
+}
+
+int SessionHandler::rtsp_flush_buffered() {
+  audioPlayer_->flush();
+  return rtsp_empty_message();
+}
 
 int SessionHandler::rtsp_post_commands() { return rtsp_empty_message(); }
 

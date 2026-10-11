@@ -67,12 +67,16 @@ void AirPlayServer::stop() {
     running_ = false;
   }
 
-  if (airplayServer_) {
-    airplayServer_.reset();
+  if (audioPlayer_) {
+    audioPlayer_->stop();
   }
 
   if (mdns_)
     mdns_->stop();
+
+  if (airplayServer_) {
+    airplayServer_.reset();
+  }
 }
 
 int AirPlayServer::publish_airplay_service() {
