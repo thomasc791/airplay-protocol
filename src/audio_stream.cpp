@@ -82,6 +82,7 @@ void AudioDataHandler::handle_audio_data(int id) {
                           static_cast<uint32_t>(receiveBuffer[8]) << 8 |
                           static_cast<uint32_t>(receiveBuffer[9]));
 
+    std::cout << "Sequence: " << sequence << std::endl;
     if (audioPlayer_->should_drop(sequence)) {
       continue;
     }

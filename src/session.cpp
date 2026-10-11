@@ -785,7 +785,7 @@ int SessionHandler::rtsp_teardown() {
     }
 
     if (tearDownAudio) {
-      audioPlayer_->flush(flushUntilSeq_);
+      audioPlayer_->reset();
     }
 
     rtsp_empty_message();

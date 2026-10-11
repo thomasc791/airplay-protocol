@@ -145,19 +145,30 @@ void AudioPlayer::resume() {
 }
 
 void AudioPlayer::flush(uint16_t untilSeq) {
-  dropUntilSeq_ = untilSeq;
+  {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+    dropUntilSeq_ = untilSeq;
+    drain_ready();
+  }
 
+  freeAvailableCV_.notify_all();
+}
+
+void AudioPlayer::reset() {
+  {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+    dropUntilSeq_ = -1;
+    drain_ready();
+  }
+  freeAvailableCV_.notify_all();
+}
+
+void AudioPlayer::drain_ready() {
   while (!readyQueue_.empty()) {
     auto buffer = std::move(readyQueue_.front());
     readyQueue_.pop();
-
     buffer.clear();
     freeQueue_.push(std::move(buffer));
-  }
-
-  {
-    std::lock_guard<std::mutex> lock(poolMutex_);
-    freeAvailableCV_.notify_all();
   }
 
   flushGen_++;

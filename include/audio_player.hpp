@@ -17,6 +17,7 @@ public:
   void stop();
 
   void flush(uint16_t untilSeq);
+  void reset();
   void pause();
   void resume();
   void wake_waiters();
@@ -47,6 +48,8 @@ private:
   int prepare();
   void playback_loop();
   void play();
+
+  void drain_ready();
 };
 
 std::shared_ptr<AudioPlayer> create_audio_player();
