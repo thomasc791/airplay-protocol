@@ -55,6 +55,9 @@ private:
   uint32_t streamID = 0;
   uint32_t connectionID_ = 0;
 
+  uint16_t flushUntilSeq_ = 0;
+  uint16_t flushUntilTS_ = 0;
+
   std::unique_ptr<PlistEncoder> plistEncoder_;
   std::unique_ptr<PlistDecoder> plistDecoder_;
   std::unique_ptr<SRPHandler> srpHandler_;
@@ -118,7 +121,7 @@ private:
   int rtsp_set_rate_anchortime();
 
   int rtsp_teardown();
-  int rtsp_new_stream(PlistEncoder::Value::Dict dictionary);
+  bool rtsp_new_stream(PlistEncoder::Value::Dict dictionary);
   int rtsp_flush_buffered();
 
   int rtsp_empty_message();

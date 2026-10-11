@@ -42,7 +42,6 @@ AudioControlHandler::~AudioControlHandler() {
     udpListener_.reset();
     break;
   case (Protocol::TCP):
-    shutdown(fd_, SHUT_RDWR);
     tcpListener_.reset();
   }
   log_event(tag, "Deleting handler.");
@@ -90,7 +89,6 @@ void AudioControlHandler::handle_tcp_controls(int id) {
       break;
     }
   }
-  close(fd_);
 }
 
 int get_key(ControlSlotArray streams, size_t key) {

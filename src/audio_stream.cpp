@@ -24,6 +24,9 @@ AudioDataHandler::AudioDataHandler(
 }
 
 AudioDataHandler::~AudioDataHandler() {
+  cancel_ = true;
+
+  audioPlayer_->wake_waiters();
   listener_.reset();
   log_event(tag, "Deleting handler.");
 }
@@ -79,6 +82,10 @@ void AudioDataHandler::handle_audio_data(int id) {
                           static_cast<uint32_t>(receiveBuffer[8]) << 8 |
                           static_cast<uint32_t>(receiveBuffer[9]));
 
+    if (audioPlayer_->should_drop(sequence)) {
+      continue;
+    }
+
     std::memcpy(tag.data(), receiveBuffer.data() + payload_size - 24, 16);
     std::memcpy(nonce.data() + 4, receiveBuffer.data() + payload_size - 8, 8);
 
@@ -91,7 +98,7 @@ void AudioDataHandler::handle_audio_data(int id) {
       continue;
     }
 
-    auto borrowed = audioPlayer_->borrow_buffer();
+    auto borrowed = audioPlayer_->borrow_buffer(cancel_);
     if (!borrowed)
       break;
     pcm = std::move(*borrowed);
@@ -107,8 +114,6 @@ void AudioDataHandler::handle_audio_data(int id) {
 
     result.plaintext.clear();
   }
-  shutdown(id, SHUT_RDWR);
-  close(id);
 }
 
 int AudioDataHandler::read_exact_bytes(int fd, u8Vec_t &recvBuffer,

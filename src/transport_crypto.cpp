@@ -16,8 +16,8 @@ CipherTransporter::CipherTransporter(u8Vec_t sk)
 }
 
 int CipherTransporter::set_message(char *buffer, size_t len) {
-  body_ = u8Vec_t(reinterpret_cast<const uint8_t *>(buffer),
-                  reinterpret_cast<const uint8_t *>(buffer) + len);
+  body_.insert(body_.end(), reinterpret_cast<const uint8_t *>(buffer),
+               reinterpret_cast<const uint8_t *>(buffer) + len);
 
   return 1;
 }

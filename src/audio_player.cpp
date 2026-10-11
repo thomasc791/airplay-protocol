@@ -2,6 +2,8 @@
 #include "utils.hpp"
 
 #include <alsa/asoundlib.h>
+#include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -37,12 +39,13 @@ AudioPlayer::~AudioPlayer() {
   log_event(tag, "Deleted handler.");
 }
 
-std::optional<std::vector<int16_t>> AudioPlayer::borrow_buffer() {
+std::optional<std::vector<int16_t>>
+AudioPlayer::borrow_buffer(std::atomic<bool> &cancel) {
   std::unique_lock<std::mutex> lock(poolMutex_);
-  freeAvailableCV_.wait(lock,
-                        [this] { return !freeQueue_.empty() || !running_; });
+  freeAvailableCV_.wait(
+      lock, [&] { return !freeQueue_.empty() || !running_ || cancel; });
 
-  if (!running_) {
+  if (!running_ || cancel) {
     return std::nullopt;
   }
 
@@ -85,6 +88,8 @@ void AudioPlayer::playback_loop() {
     return;
   }
 
+  std::ofstream raw("out.raw", std::ios::binary | std::ios::app);
+
   while (running_) {
     {
       std::unique_lock<std::mutex> lock(poolMutex_);
@@ -101,6 +106,15 @@ void AudioPlayer::playback_loop() {
       readyQueue_.pop();
     }
 
+    auto gen = flushGen_.load();
+    if (gen != seenGen_) {
+      snd_pcm_drop(pcm_handle_);
+      snd_pcm_prepare(pcm_handle_);
+      seenGen_ = gen;
+      hardwareChunk_.clear();
+    }
+    raw.write(reinterpret_cast<const char *>(hardwareChunk_.data()),
+              hardwareChunk_.size());
     play();
 
     {
@@ -130,8 +144,8 @@ void AudioPlayer::resume() {
   dataAvailableCV_.notify_all();
 }
 
-void AudioPlayer::flush() {
-  std::lock_guard<std::mutex> lock(poolMutex_);
+void AudioPlayer::flush(uint16_t untilSeq) {
+  dropUntilSeq_ = untilSeq;
 
   while (!readyQueue_.empty()) {
     auto buffer = std::move(readyQueue_.front());
@@ -141,6 +155,28 @@ void AudioPlayer::flush() {
     freeQueue_.push(std::move(buffer));
   }
 
+  {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+    freeAvailableCV_.notify_all();
+  }
+
+  flushGen_++;
+}
+
+bool AudioPlayer::should_drop(uint16_t seq) {
+  int32_t until = dropUntilSeq_.load();
+  if (until < 0) {
+    return false;
+  }
+  if (int16_t(seq - uint16_t(until)) <= 0) {
+    return true;
+  }
+  dropUntilSeq_ = -1;
+  return false;
+}
+
+void AudioPlayer::wake_waiters() {
+  std::lock_guard<std::mutex> lock(poolMutex_);
   freeAvailableCV_.notify_all();
 }
 
@@ -160,10 +196,11 @@ void AudioPlayer::play() {
       snd_pcm_writei(pcm_handle_, hardwareChunk_.data(), frames);
 
   if (written < 0) {
+    std::cerr << "ALSA Write Failed/Unrecoverable: " << snd_strerror(written)
+              << std::endl;
     written = snd_pcm_recover(pcm_handle_, written, 0);
     if (written < 0) {
-      std::cerr << "ALSA Write Failed/Unrecoverable: " << snd_strerror(written)
-                << std::endl;
+      std::cerr << "ALSA Unrecoverable: " << snd_strerror(written) << std::endl;
     }
   }
 }

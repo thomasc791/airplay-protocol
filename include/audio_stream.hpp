@@ -23,6 +23,7 @@ public:
 private:
   std::unique_ptr<TCPServer> listener_;
   std::atomic<bool> running_{false};
+  std::atomic<bool> cancel_{false};
 
   std::shared_ptr<AudioPlayer> audioPlayer_;
 

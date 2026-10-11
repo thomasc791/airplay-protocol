@@ -177,6 +177,4 @@ void AirPlayServer::handle_client(int clientID) {
       }
     }
   }
-  close(clientID);
-  running_ = false;
 }

@@ -776,14 +776,16 @@ int SessionHandler::rtsp_teardown() {
 
   log_event(std::to_string(clientID_), "TEARDOWN");
 
-  if (audioPlayer_) {
-    audioPlayer_->flush();
-  }
+  bool tearDownAudio = false;
 
   if (plistDecoder_->has_key(dictionary, "streams")) {
     auto streams = plistDecoder_->get(dictionary, "streams");
     for (auto &stream : streams.arrayVal) {
-      rtsp_new_stream(stream.dictVal);
+      tearDownAudio |= rtsp_new_stream(stream.dictVal);
+    }
+
+    if (tearDownAudio) {
+      audioPlayer_->flush(flushUntilSeq_);
     }
 
     rtsp_empty_message();
@@ -796,12 +798,14 @@ int SessionHandler::rtsp_teardown() {
   return 1;
 }
 
-int SessionHandler::rtsp_new_stream(PlistEncoder::Value::Dict dictionary) {
+bool SessionHandler::rtsp_new_stream(PlistEncoder::Value::Dict dictionary) {
   uint64_t currentID = plistDecoder_->get(dictionary, "streamID").uintVal;
   uint64_t type = plistDecoder_->get(dictionary, "type").uintVal;
 
   int indexAudio = -1;
   int indexControl = -1;
+
+  bool tearDownAudio = false;
 
   switch (type) {
   case 130:
@@ -812,6 +816,7 @@ int SessionHandler::rtsp_new_stream(PlistEncoder::Value::Dict dictionary) {
       break;
     }
     audioControlStreams_[indexControl].reset();
+
     break;
   case 103:
     indexAudio = get_key(audioDataStreams_, currentID);
@@ -823,10 +828,12 @@ int SessionHandler::rtsp_new_stream(PlistEncoder::Value::Dict dictionary) {
 
     audioDataStreams_[indexAudio].reset();
     audioControlStreams_[indexControl].reset();
+
+    tearDownAudio = true;
     break;
   }
 
-  return 1;
+  return tearDownAudio;
 }
 
 int SessionHandler::rtsp_record() {
@@ -874,7 +881,12 @@ int SessionHandler::rtsp_set_rate_anchortime() {
 }
 
 int SessionHandler::rtsp_flush_buffered() {
-  audioPlayer_->flush();
+  auto dictionary = plistDecoder_->decode(body_, contentLength_).dictVal;
+
+  flushUntilSeq_ = plistDecoder_->get(dictionary, "flushUntilSeq").uintVal;
+  flushUntilTS_ = plistDecoder_->get(dictionary, "flushUntilTS").uintVal;
+
+  audioPlayer_->flush(flushUntilSeq_);
   return rtsp_empty_message();
 }
 
