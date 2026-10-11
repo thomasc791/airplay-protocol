@@ -173,16 +173,13 @@ int SessionHandler::parse_message() {
                             connectionBuffer_.begin() + total_length);
   }
 
-  sendHeader_ = "";
   sendBody_ = finalResponse;
   messageLength_ = 0;
 
   return 1;
 }
 
-std::tuple<std::string, u8Vec_t> SessionHandler::get_response() {
-  return {sendHeader_, sendBody_};
-}
+u8Vec_t SessionHandler::get_response() { return sendBody_; }
 
 int SessionHandler::reset_state() {
   CSeq_ = -1;
@@ -221,7 +218,6 @@ int SessionHandler::rtsp_get_info() {
   int header_len =
       create_header("application/x-apple-binary-plist", plist.size());
 
-  sendHeader_ = header_;
   sendHeaderLen_ = header_len;
   sendBody_ = plist;
 
@@ -273,7 +269,6 @@ int SessionHandler::rtsp_post_pair_setup() {
 
   int header_len = create_header("application/octet-stream", body.size());
 
-  sendHeader_ = header_;
   sendHeaderLen_ = header_len;
   sendBody_ = body;
 
@@ -483,7 +478,6 @@ int SessionHandler::rtsp_post_pair_verify() {
   int header_len = create_header("application/octet-stream", body.size());
 
   sendHeaderLen_ = header_len;
-  sendHeader_ = header_;
   sendBody_ = body;
 
   if (err <= 0) {
@@ -618,7 +612,6 @@ int SessionHandler::rtsp_post_fp_setup() {
   int header_len = create_header("application/octet-stream", body.size());
 
   sendHeaderLen_ = header_len;
-  sendHeader_ = header_;
   sendBody_ = body;
 
   return 1;
@@ -638,7 +631,6 @@ int SessionHandler::rtsp_setup() {
       create_header("application/x-apple-binary-plist", body.size());
 
   sendHeaderLen_ = header_len;
-  sendHeader_ = header_;
   sendBody_ = body;
 
   return 1;
@@ -784,6 +776,10 @@ int SessionHandler::rtsp_teardown() {
 
   log_event(std::to_string(clientID_), "TEARDOWN");
 
+  if (audioPlayer_) {
+    audioPlayer_->flush();
+  }
+
   if (plistDecoder_->has_key(dictionary, "streams")) {
     auto streams = plistDecoder_->get(dictionary, "streams");
     for (auto &stream : streams.arrayVal) {
@@ -845,7 +841,6 @@ int SessionHandler::rtsp_record() {
                             CSeq_);
 
   sendHeaderLen_ = header_len;
-  sendHeader_ = header_;
   sendBody_ = body;
 
   return 1;
@@ -892,7 +887,6 @@ int SessionHandler::rtsp_get_parameter() {
   int header_len = create_header("text/parameters", body.size());
 
   sendHeaderLen_ = header_len;
-  sendHeader_ = header_;
   sendBody_ = body;
 
   return 1;
@@ -904,7 +898,6 @@ int SessionHandler::rtsp_empty_message() {
   int header_len = create_header();
 
   sendHeaderLen_ = header_len;
-  sendHeader_ = header_;
   sendBody_ = body;
 
   return 1;
@@ -935,7 +928,6 @@ int SessionHandler::rtsp_post_pair_error() {
 
   int header_len = create_header("application/octet-stream", sizeof(tlv));
 
-  sendHeader_ = header_;
   sendHeaderLen_ = header_len;
   sendBody_ = tlv;
 

@@ -89,23 +89,12 @@ void AudioPlayer::playback_loop() {
     {
       std::unique_lock<std::mutex> lock(poolMutex_);
 
-      if (flush_) {
-        if (pcm_handle_) {
-          snd_pcm_drop(pcm_handle_);
-          snd_pcm_prepare(pcm_handle_);
-        }
-        flush_ = false;
-      }
       dataAvailableCV_.wait(lock, [this] {
-        return (!readyQueue_.empty() && !paused_) || !running_ || flush_;
+        return (!readyQueue_.empty() && !paused_) || !running_;
       });
 
       if (!running_) {
         break;
-      }
-
-      if (flush_) {
-        continue;
       }
 
       hardwareChunk_ = std::move(readyQueue_.front());
@@ -130,7 +119,6 @@ void AudioPlayer::playback_loop() {
 void AudioPlayer::pause() {
   std::lock_guard<std::mutex> lock(poolMutex_);
   paused_ = true;
-  flush_ = true;
 
   dataAvailableCV_.notify_all();
 }
@@ -145,8 +133,6 @@ void AudioPlayer::resume() {
 void AudioPlayer::flush() {
   std::lock_guard<std::mutex> lock(poolMutex_);
 
-  flush_ = true;
-
   while (!readyQueue_.empty()) {
     auto buffer = std::move(readyQueue_.front());
     readyQueue_.pop();
@@ -156,7 +142,6 @@ void AudioPlayer::flush() {
   }
 
   freeAvailableCV_.notify_all();
-  dataAvailableCV_.notify_all();
 }
 
 void AudioPlayer::play() {

@@ -132,6 +132,7 @@ void AirPlayServer::handle_client(int clientID) {
   std::unique_ptr<CipherTransporter> cipherTransporter;
 
   char buffer[2048] = {0};
+  u8Vec_t payload = {};
   while (sessionHandler->is_running()) {
     memset(buffer, 0, sizeof(buffer));
     ssize_t bytes_read = read(clientID, buffer, sizeof(buffer) - 1);
@@ -145,9 +146,7 @@ void AirPlayServer::handle_client(int clientID) {
       sessionHandler->set_msg(buffer, bytes_read);
       sessionHandler->parse_message();
 
-      auto [header, body] = sessionHandler->get_response();
-      u8Vec_t payload(header.begin(), header.end());
-      payload.insert(payload.end(), body.begin(), body.end());
+      payload = sessionHandler->get_response();
 
       send(clientID, payload.data(), payload.size(), 0);
     } else if (sessionHandler->is_verified() && !cipherTransporter) {
@@ -165,9 +164,7 @@ void AirPlayServer::handle_client(int clientID) {
       sessionHandler->set_msg((char *)decrypted.c_str(), decrypted.size());
       sessionHandler->parse_message();
 
-      auto [header, body] = sessionHandler->get_response();
-      u8Vec_t payload(header.begin(), header.end());
-      payload.insert(payload.end(), body.begin(), body.end());
+      payload = sessionHandler->get_response();
 
       if (!payload.empty()) {
         auto aad = cipherTransporter->set_aad(payload);

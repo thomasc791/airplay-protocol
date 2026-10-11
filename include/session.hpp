@@ -35,7 +35,7 @@ public:
 
   u8Vec_t get_shared_key();
 
-  std::tuple<std::string, u8Vec_t> get_response();
+  u8Vec_t get_response();
 
   bool is_verified() { return verified_; };
   bool is_running() { return running_; };

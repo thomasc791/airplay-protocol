@@ -32,7 +32,6 @@ private:
   std::thread playbackThread_;
   std::atomic<bool> running_{false};
   std::atomic<bool> paused_{false};
-  std::atomic<bool> flush_{false};
 
   std::vector<int16_t> hardwareChunk_;
 
