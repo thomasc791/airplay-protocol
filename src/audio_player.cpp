@@ -80,6 +80,11 @@ int AudioPlayer::prepare() {
   snd_pcm_set_params(pcm_handle_, SND_PCM_FORMAT_S16_LE,
                      SND_PCM_ACCESS_RW_INTERLEAVED, 2, 44100, 1, 500000);
 
+  snd_mixer_open(&mixer_, 0);
+  snd_mixer_attach(mixer_, "hw:1");
+  snd_mixer_selem_register(mixer_, nullptr, nullptr);
+  snd_mixer_load(mixer_);
+
   return err;
 }
 

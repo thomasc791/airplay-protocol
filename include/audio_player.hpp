@@ -44,6 +44,7 @@ private:
   std::vector<int16_t> hardwareChunk_;
 
   snd_pcm_t *pcm_handle_ = nullptr;
+  snd_mixer_t *mixer_;
 
   int prepare();
   void playback_loop();

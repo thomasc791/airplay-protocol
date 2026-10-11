@@ -15,6 +15,7 @@ find_package(ALSA REQUIRED)
 
 pkg_check_modules(AVAHI REQUIRED avahi-client)
 pkg_check_modules(FFMPEG REQUIRED libavcodec libavutil libswresample)
+pkg_check_modules(NetworkManager REQUIRED IMPORTED_TARGET libnm glib-2.0 gobject-2.0)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -22,6 +23,7 @@ include_directories(
     ${AVAHI_INCLUDE_DIRS}
     ${FFMPEG_INCLUDE_DIRS}
     ${ALSA_INCLUDE_DIRS}
+    ${LIBNM_INCLUDE_DIRS}
 )
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/playfair)
@@ -42,6 +44,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ${AVAHI_LIBRARIES}
     ${FFMPEG_LIBRARIES}
     ${ALSA_LIBRARIES}
+    PkgConfig::NetworkManager
     playfair
     plist
     tlv8
