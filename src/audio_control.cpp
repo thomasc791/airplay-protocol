@@ -1,6 +1,7 @@
 #include "audio_control.hpp"
 #include "utils.hpp"
 
+#include <cstdio>
 #include <iostream>
 #include <memory>
 #include <net/if.h>
@@ -60,11 +61,6 @@ void AudioControlHandler::start() {
 void AudioControlHandler::handle_udp_controls(const char *data, size_t length,
                                               sockaddr_storage sender) {
   running_ = udpListener_->is_running();
-
-  std::cout << "[" << tag << "] Received " << length << " bytes from iPhone!"
-            << std::endl;
-
-  printf("[PTP] Message Type: %02x\n", (unsigned char)data[0]);
 }
 
 void AudioControlHandler::handle_tcp_controls(int id) {

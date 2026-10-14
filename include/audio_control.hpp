@@ -7,8 +7,6 @@
 #include <cstdint>
 #include <memory>
 
-enum class Protocol { UDP, TCP };
-
 class AudioControlHandler {
 public:
   AudioControlHandler(Protocol protocol);

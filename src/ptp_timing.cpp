@@ -23,10 +23,7 @@ void PTPTimingHandler::start() { listener_->start(); };
 
 void PTPTimingHandler::handle_ptp_timing(const char *data, size_t length,
                                          sockaddr_storage sender) {
-  std::cout << "[" << tag << "] Received " << length << " bytes from iPhone!"
-            << std::endl;
-
-  printf("[PTP] Message Type: %02x\n", (unsigned char)data[0]);
+  log_event(tag, data);
 }
 
 std::unique_ptr<PTPTimingHandler> create_ptp_timing_handler() {

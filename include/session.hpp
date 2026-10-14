@@ -110,8 +110,9 @@ private:
 
   int rtsp_setup();
   u8Vec_t rtsp_setup_event_timing(pwVal::Dict dictionary);
-  u8Vec_t rtsp_setup_m2(pwVal::Dict dictionary, int streamType);
-  u8Vec_t rtsp_setup_m3(pwVal::Dict dictionary);
+  u8Vec_t rtsp_setup_control_stream(int streamType);
+  u8Vec_t rtsp_setup_streams(pwVal::Dict incomingStreamDict, int streamType,
+                             Protocol dataProto, Protocol controlProto);
   u8Vec_t rtsp_setup_media_stream(pwVal::Dict dictionary);
 
   int rtsp_record();

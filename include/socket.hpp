@@ -10,6 +10,8 @@
 #include <thread>
 #include <vector>
 
+enum class Protocol { UDP, TCP };
+
 class SocketResource {
 public:
   SocketResource(__socket_type socketType, uint64_t port);

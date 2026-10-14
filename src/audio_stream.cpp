@@ -1,46 +1,65 @@
 #include "audio_stream.hpp"
-#include "audio_decoder.hpp"
-#include "crypto.hpp"
-#include "transport_crypto.hpp"
 #include "utils.hpp"
 
 #include <cstddef>
 #include <cstring>
-#include <fstream>
 #include <iostream>
-#include <memory>
 #include <unistd.h>
-
-#include <sys/socket.h>
 
 constexpr std::string tag = "AudioHandler";
 
 AudioDataHandler::AudioDataHandler(
     const std::shared_ptr<AudioPlayer> &audioPlayer, uint64_t format,
-    u8Vec_t shk)
-    : audioPlayer_(audioPlayer), format_(format), shk_(shk) {
-  auto callback = [this](int id) { this->handle_audio_data(id); };
-  listener_ = std::make_unique<TCPServer>(callback, "AudioDataHandler", 0);
+    u8Vec_t shk, Protocol protocol)
+    : protocol_(protocol), audioPlayer_(audioPlayer), format_(format),
+      shk_(shk) {
+  switch (protocol_) {
+  case Protocol::UDP:
+    udpListener_ = std::make_unique<UDPServer>(
+        [this](const char *data, size_t length, sockaddr_storage sender) {
+          this->handle_udp_data(data, length, sender);
+        },
+        "AudioDataHandler", 0);
+    log_event(tag, "Created UDP Listener");
+    break;
+  case Protocol::TCP:
+    tcpListener_ = std::make_unique<TCPServer>(
+        [this](int id) { this->handle_tcp_data(id); }, "AudioDataHandler", 0,
+        timeval{1, 0});
+    log_event(tag, "Created TCP Listener");
+    break;
+  }
+
+  auto cipher_ = create_cipher_transporter(shk_);
+  cipher_->set_decryption_key(shk_);
+
+  audioDecoder_ = create_audio_decoder(format_);
 }
 
 AudioDataHandler::~AudioDataHandler() {
   cancel_ = true;
 
   audioPlayer_->wake_waiters();
-  listener_.reset();
+  tcpListener_.reset();
+  udpListener_.reset();
   log_event(tag, "Deleting handler.");
 }
 
-void AudioDataHandler::start() { listener_->start(); };
+void AudioDataHandler::start() {
+  switch (protocol_) {
+  case Protocol::UDP:
+    udpListener_->start();
+    break;
+  case Protocol::TCP:
+    tcpListener_->start();
+    break;
+  }
+};
 
-void AudioDataHandler::handle_audio_data(int id) {
-  running_ = listener_->is_running();
+void AudioDataHandler::handle_tcp_data(int id) {
+  running_ = tcpListener_->is_running();
 
-  auto cipher = create_cipher_transporter(shk_);
-  cipher->set_decryption_key(shk_);
-
-  auto audioDecoder = create_audio_decoder(format_);
-  if (audioDecoder->create_context() < 0) {
+  if (audioDecoder_->create_context() < 0) {
     shutdown(id, SHUT_RDWR);
     close(id);
     return;
@@ -48,8 +67,6 @@ void AudioDataHandler::handle_audio_data(int id) {
 
   DecryptionResult result;
   std::vector<int16_t> pcm;
-  std::ofstream raw("out.raw", std::ios::binary | std::ios::app);
-
   constexpr size_t BUFFER_SIZE = 32768;
   u8Vec_t receiveBuffer(BUFFER_SIZE);
   u8Vec_t tag(16);
@@ -89,9 +106,9 @@ void AudioDataHandler::handle_audio_data(int id) {
     std::memcpy(tag.data(), receiveBuffer.data() + payload_size - 24, 16);
     std::memcpy(nonce.data() + 4, receiveBuffer.data() + payload_size - 8, 8);
 
-    cipher->decrypt(result, receiveBuffer.data() + 14, audioSize,
-                    receiveBuffer.data() + 6, 8, nonce,
-                    receiveBuffer.data() + payload_size - 24);
+    cipher_->decrypt(result, receiveBuffer.data() + 14, audioSize,
+                     receiveBuffer.data() + 6, 8, nonce,
+                     receiveBuffer.data() + payload_size - 24);
 
     if (!result.success) {
       std::cerr << "Did not decrypt properly" << std::endl;
@@ -104,7 +121,7 @@ void AudioDataHandler::handle_audio_data(int id) {
     pcm = std::move(*borrowed);
     pcm.clear();
 
-    if (audioDecoder->play_audio(result.plaintext.data(), result.size, pcm) <
+    if (audioDecoder_->play_audio(result.plaintext.data(), result.size, pcm) <
         0) {
       audioPlayer_->return_to_free_pool(std::move(pcm));
       continue;
@@ -147,6 +164,9 @@ uint32_t AudioDataHandler::extract_size_from_header(const u8Vec_t &header) {
   return payload_size;
 }
 
+void AudioDataHandler::handle_udp_data(const char *data, size_t length,
+                                       sockaddr_storage) {}
+
 int get_key(StreamSlotArray streams, size_t key) {
   for (size_t i = 0; i < streams.size(); i++) {
     if (streams[i].active && streams[i].streamID == key) {
@@ -166,8 +186,21 @@ int available_stream(StreamSlotArray streams) {
   return -1;
 }
 
+uint64_t AudioDataHandler::get_port() {
+  switch (protocol_) {
+  case (Protocol::TCP):
+    return tcpListener_->get_port();
+    break;
+  case (Protocol::UDP):
+    return udpListener_->get_port();
+    break;
+  default:
+    return 0;
+  }
+}
+
 std::shared_ptr<AudioDataHandler>
 create_audio_handler(const std::shared_ptr<AudioPlayer> &audioPlayer,
-                     uint64_t format, u8Vec_t shk) {
-  return std::make_shared<AudioDataHandler>(audioPlayer, format, shk);
+                     uint64_t format, u8Vec_t shk, Protocol protocol) {
+  return std::make_shared<AudioDataHandler>(audioPlayer, format, shk, protocol);
 }

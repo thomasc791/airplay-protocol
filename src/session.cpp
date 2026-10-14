@@ -203,11 +203,11 @@ u8Vec_t SessionHandler::create_plist() {
       {"password", V::boolean(true)},
       {"sourceVersion", V::string("366.0")},
       {"statusFlags", V::uint(statusFlags_->get_raw())},
-      // {"audioFormats", V::array({V::dict({
-      //                      {"type", V::uint(96)},
-      //                      {"audioInputFormats", V::uint(0x01000000)},
-      //                      {"audioOutputFormats", V::uint(0x01000000)},
-      // })})},
+      {"audioFormats", V::array({V::dict({
+                           {"type", V::uint(96)},
+                           {"audioInputFormats", V::uint(0x40000)},
+                           {"audioOutputFormats", V::uint(0x40000)},
+                       })})},
   }));
   return plist;
 }
@@ -661,62 +661,35 @@ u8Vec_t SessionHandler::rtsp_setup_media_stream(pwVal::Dict dictionary) {
   auto streamType = plistDecoder_->get(incomingStreamDict, "type").uintVal;
 
   for (auto &e : incomingStreamDict) {
-    if (e.key == "audioFormat") {
-      std::cout << e.key << std::endl;
+    std::cout << e.key << std::endl;
+    if (e.key == "audioFormat")
       std::cout << e.value.uintVal << std::endl;
-    }
   }
 
+  std::cout << "Type: " << streamType << std::endl;
+
   if (streamType == 130) {
-    body = rtsp_setup_m2(incomingStreamDict, streamType);
+    body = rtsp_setup_control_stream(streamType);
   } else if (streamType == 96 ||
              plistDecoder_->has_key(incomingStreamDict, "ekey")) {
-    body = rtsp_setup_m2(incomingStreamDict, streamType);
+    body = rtsp_setup_streams(incomingStreamDict, streamType, Protocol::UDP,
+                              Protocol::UDP);
   } else if (streamType == 103 ||
              plistDecoder_->has_key(incomingStreamDict, "shk")) {
-    auto id = get_stream_id();
-    std::cout << "STREAMID: " << id << std::endl;
-
-    int index = available_stream(audioDataStreams_);
-    if (index == -1) {
-      std::cerr << "Maximum concurrent streams reached!" << std::endl;
-    }
-
-    u8Vec_t shk = plistDecoder_->get(incomingStreamDict, "shk").dataVal;
-    uint64_t audioFormat =
-        plistDecoder_->get(incomingStreamDict, "audioFormat").uintVal;
-
-    auto &audioData =
-        audioDataStreams_[index].create(audioPlayer_, id, audioFormat, shk);
-    auto &audioControl = audioControlStreams_[index].create(Protocol::UDP, id);
-
-    pwVal::Dict streamDict(
-        {{"type", pwVal::uint(streamType)},
-         {"streamID", pwVal::uint(id)},
-         {"dataPort", pwVal::uint(audioData->get_port())},
-         {"audioBufferSize", pwVal::uint(0x800000)},
-         {"controlPort", pwVal::uint(audioControl->get_port())}});
-
-    pwVal::Array streamsArray;
-    streamsArray.push_back(pwVal::dict(streamDict));
-
-    pwVal::Dict rootDict;
-    rootDict.push_back({"streams", pwVal::array(streamsArray)});
-
-    body = plistEncoder_->serialize(pwVal::dict(rootDict));
+    body = rtsp_setup_streams(incomingStreamDict, streamType, Protocol::TCP,
+                              Protocol::UDP);
   }
 
   return body;
 }
 
-u8Vec_t SessionHandler::rtsp_setup_m2(pwVal::Dict dictionary, int streamType) {
+u8Vec_t SessionHandler::rtsp_setup_control_stream(int streamType) {
 
   auto id = get_stream_id();
   std::cout << "STREAMID: " << id << std::endl;
 
-  int indexAudio = available_stream(audioDataStreams_);
   int indexControl = available_stream(audioControlStreams_);
-  if (indexAudio == -1 || indexControl == -1) {
+  if (indexControl == -1) {
     std::cerr << "Maximum concurrent streams reached!" << std::endl;
     return {};
   }
@@ -725,31 +698,12 @@ u8Vec_t SessionHandler::rtsp_setup_m2(pwVal::Dict dictionary, int streamType) {
       {"type", pwVal::uint(streamType)},
   });
 
-  if (plistDecoder_->has_key(dictionary, "controlType")) {
-    auto &audioControl =
-        audioControlStreams_[indexControl].create(Protocol::TCP, id);
-    streamDict.push_back(
-        {"controlPort", pwVal::uint(audioControl->get_port())});
-    streamDict.push_back({"streamID", pwVal::uint(id)});
+  auto &audioControl =
+      audioControlStreams_[indexControl].create(Protocol::UDP, id);
+  streamDict.push_back({"controlPort", pwVal::uint(audioControl->get_port())});
+  streamDict.push_back({"streamID", pwVal::uint(id)});
 
-    std::cout << "Created stream with ID: " << id << std::endl;
-
-  } else {
-    shk_ = plistDecoder_->get(dictionary, "shk").dataVal;
-    auto audioFormat = plistDecoder_->get(dictionary, "audioFormat").uintVal;
-
-    auto &audioData = audioDataStreams_[indexAudio].create(audioPlayer_, id,
-                                                           audioFormat, shk_);
-    auto &audioControl =
-        audioControlStreams_[indexControl].create(Protocol::UDP, id);
-    streamDict.push_back({"dataPort", pwVal::uint(audioData->get_port())});
-    streamDict.push_back(
-        {"controlPort", pwVal::uint(audioControl->get_port())});
-    streamDict.push_back({"audioBufferSize", pwVal::uint(0x800000)});
-
-    if (plistDecoder_->has_key(dictionary, "streamID"))
-      streamDict.push_back({"streamID", pwVal::uint(id)});
-  }
+  std::cout << "Created stream with ID: " << id << std::endl;
 
   pwVal::Array streamsArray;
   streamsArray.push_back(pwVal::dict(streamDict));
@@ -760,14 +714,40 @@ u8Vec_t SessionHandler::rtsp_setup_m2(pwVal::Dict dictionary, int streamType) {
   return plistEncoder_->serialize(pwVal::dict(rootDict));
 }
 
-u8Vec_t SessionHandler::rtsp_setup_m3(pwVal::Dict) {
-  using V = PlistEncoder::Value;
+u8Vec_t SessionHandler::rtsp_setup_streams(pwVal::Dict incomingStreamDict,
+                                           int streamType, Protocol dataProto,
+                                           Protocol controlProto) {
+  auto id = get_stream_id();
 
-  std::vector<uint8_t> bplistPayload = plistEncoder_->serialize(
-      V::dict({{"timingPort", pwVal::uint(ptpHandler_->get_port())},
-               {"eventPort", pwVal::uint(eventHandler_->get_port())}}));
+  int indexData = available_stream(audioDataStreams_);
+  int indexControl = available_stream(audioControlStreams_);
+  if (indexData == -1 || indexControl == -1) {
+    std::cerr << "Maximum concurrent streams reached!" << std::endl;
+  }
 
-  return bplistPayload;
+  u8Vec_t shk = plistDecoder_->get(incomingStreamDict, "shk").dataVal;
+  uint64_t audioFormat =
+      plistDecoder_->get(incomingStreamDict, "audioFormat").uintVal;
+
+  auto &audioData = audioDataStreams_[indexData].create(
+      audioPlayer_, id, audioFormat, shk, dataProto);
+  auto &audioControl =
+      audioControlStreams_[indexControl].create(controlProto, id);
+
+  pwVal::Dict streamDict(
+      {{"type", pwVal::uint(streamType)},
+       {"streamID", pwVal::uint(id)},
+       {"dataPort", pwVal::uint(audioData->get_port())},
+       {"audioBufferSize", pwVal::uint(0x800000)},
+       {"controlPort", pwVal::uint(audioControl->get_port())}});
+
+  pwVal::Array streamsArray;
+  streamsArray.push_back(pwVal::dict(streamDict));
+
+  pwVal::Dict rootDict;
+  rootDict.push_back({"streams", pwVal::array(streamsArray)});
+
+  return plistEncoder_->serialize(pwVal::dict(rootDict));
 }
 
 int SessionHandler::rtsp_teardown() {
