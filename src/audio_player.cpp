@@ -204,13 +204,6 @@ void AudioPlayer::play() {
   }
 
   int frames = hardwareChunk_.size() / 2;
-  size_t clipped = 0;
-
-  for (int16_t s : hardwareChunk_)
-    if (s == 32767 || s == -32768)
-      ++clipped;
-  if (clipped)
-    std::cerr << "clipped samples: " << clipped << "\n";
 
   snd_pcm_sframes_t written =
       snd_pcm_writei(pcm_handle_, hardwareChunk_.data(), frames);
