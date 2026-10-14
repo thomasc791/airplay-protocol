@@ -350,10 +350,10 @@ int SessionHandler::pair_setup_m5() {
 
   err = cryptoHandler_->set_nonce("PS-Msg05");
 
-  auto [cipher, tag] =
+  auto [cipher, authtag] =
       get_cipher_tag(tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
-  u8Vec_t blob =
-      cryptoHandler_->chacha_decrypt(cipher, cryptoHandler_->get_nonce(), tag);
+  u8Vec_t blob = cryptoHandler_->chacha_decrypt(
+      cipher, cryptoHandler_->get_nonce(), authtag);
 
   tlv8Decoder_->set_sub_message(blob);
   tlv8Decoder_->decode_sub();
@@ -532,11 +532,11 @@ int SessionHandler::pair_verify_m2() {
 
 int SessionHandler::pair_verify_m3() {
   int err = cryptoHandler_->set_nonce("PV-Msg03");
-  auto [cipher, tag] =
+  auto [cipher, authtag] =
       get_cipher_tag(tlv8Decoder_->read_message(TLV8_ENCRYPTED_DATA));
 
-  auto decryptBlob =
-      cryptoHandler_->chacha_decrypt(cipher, cryptoHandler_->get_nonce(), tag);
+  auto decryptBlob = cryptoHandler_->chacha_decrypt(
+      cipher, cryptoHandler_->get_nonce(), authtag);
   tlv8Decoder_->set_sub_message(decryptBlob);
   tlv8Decoder_->decode_sub();
 
@@ -738,7 +738,7 @@ u8Vec_t SessionHandler::rtsp_setup_streams(pwVal::Dict incomingStreamDict,
       {{"type", pwVal::uint(streamType)},
        {"streamID", pwVal::uint(id)},
        {"dataPort", pwVal::uint(audioData->get_port())},
-       {"audioBufferSize", pwVal::uint(0x800000)},
+       {"audioBufferSize", pwVal::uint(0x400000)},
        {"controlPort", pwVal::uint(audioControl->get_port())}});
 
   pwVal::Array streamsArray;

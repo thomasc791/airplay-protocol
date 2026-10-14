@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE Debug)
 
-add_compile_options(-Wall -Wextra -O2)
+add_compile_options(-Wall -Wextra -Wshadow -O2)
 
 # Dependencies
 find_package(PkgConfig REQUIRED)

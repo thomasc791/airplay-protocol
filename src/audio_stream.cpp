@@ -7,11 +7,12 @@
 #include <unistd.h>
 
 constexpr std::string tag = "AudioHandler";
+constexpr size_t BUFFER_SIZE = 0x400000;
 
 AudioDataHandler::AudioDataHandler(
     const std::shared_ptr<AudioPlayer> &audioPlayer, uint64_t format,
     u8Vec_t shk, Protocol protocol)
-    : protocol_(protocol), audioPlayer_(audioPlayer), format_(format),
+    : protocol_(protocol), tag_(16), audioPlayer_(audioPlayer), format_(format),
       shk_(shk) {
   switch (protocol_) {
   case Protocol::UDP:
@@ -23,6 +24,7 @@ AudioDataHandler::AudioDataHandler(
     log_event(tag, "Created UDP Listener");
     break;
   case Protocol::TCP:
+    receiveBuffer_.resize(BUFFER_SIZE);
     tcpListener_ = std::make_unique<TCPServer>(
         [this](int id) { this->handle_tcp_data(id); }, "AudioDataHandler", 0,
         timeval{1, 0});
@@ -30,10 +32,11 @@ AudioDataHandler::AudioDataHandler(
     break;
   }
 
-  auto cipher_ = create_cipher_transporter(shk_);
+  cipher_ = create_cipher_transporter(shk_);
   cipher_->set_decryption_key(shk_);
 
   audioDecoder_ = create_audio_decoder(format_);
+  correctContext_ = audioDecoder_->create_context();
 }
 
 AudioDataHandler::~AudioDataHandler() {
@@ -59,56 +62,49 @@ void AudioDataHandler::start() {
 void AudioDataHandler::handle_tcp_data(int id) {
   running_ = tcpListener_->is_running();
 
-  if (audioDecoder_->create_context() < 0) {
+  if (correctContext_ < 0) {
     shutdown(id, SHUT_RDWR);
     close(id);
     return;
   }
 
-  DecryptionResult result;
-  std::vector<int16_t> pcm;
-  constexpr size_t BUFFER_SIZE = 32768;
-  u8Vec_t receiveBuffer(BUFFER_SIZE);
-  u8Vec_t tag(16);
-  std::array<uint8_t, 12> nonce = {0};
-
   size_t audioSize = 0;
 
   while (running_) {
-    int offset = read_exact_bytes(id, receiveBuffer, 2, 0);
+    int offset = read_exact_bytes(id, receiveBuffer_, 2, 0);
     if (0 >= offset)
       break;
 
-    uint16_t payload_size = (static_cast<uint16_t>(receiveBuffer[0]) << 8) |
-                            static_cast<uint16_t>(receiveBuffer[1]);
+    uint16_t payload_size = (static_cast<uint16_t>(receiveBuffer_[0]) << 8) |
+                            static_cast<uint16_t>(receiveBuffer_[1]);
 
-    if (payload_size < 38 || payload_size > BUFFER_SIZE) {
+    if (payload_size < 38) {
       break;
     }
 
     audioSize = payload_size - 38;
 
-    offset = read_exact_bytes(id, receiveBuffer, payload_size - 2, 2);
+    offset = read_exact_bytes(id, receiveBuffer_, payload_size - 2, 2);
     if (0 >= offset)
       break;
 
-    uint16_t sequence = (static_cast<uint16_t>(receiveBuffer[4]) << 8 |
-                         static_cast<uint16_t>(receiveBuffer[5]));
-    uint32_t timestamp = (static_cast<uint32_t>(receiveBuffer[6]) << 24 |
-                          static_cast<uint32_t>(receiveBuffer[7]) << 16 |
-                          static_cast<uint32_t>(receiveBuffer[8]) << 8 |
-                          static_cast<uint32_t>(receiveBuffer[9]));
+    uint16_t sequence = (static_cast<uint16_t>(receiveBuffer_[4]) << 8 |
+                         static_cast<uint16_t>(receiveBuffer_[5]));
+    uint32_t timestamp = (static_cast<uint32_t>(receiveBuffer_[6]) << 24 |
+                          static_cast<uint32_t>(receiveBuffer_[7]) << 16 |
+                          static_cast<uint32_t>(receiveBuffer_[8]) << 8 |
+                          static_cast<uint32_t>(receiveBuffer_[9]));
 
     if (audioPlayer_->should_drop(sequence)) {
       continue;
     }
 
-    std::memcpy(tag.data(), receiveBuffer.data() + payload_size - 24, 16);
-    std::memcpy(nonce.data() + 4, receiveBuffer.data() + payload_size - 8, 8);
+    std::memcpy(tag_.data(), receiveBuffer_.data() + payload_size - 24, 16);
+    std::memcpy(nonce.data() + 4, receiveBuffer_.data() + payload_size - 8, 8);
 
-    cipher_->decrypt(result, receiveBuffer.data() + 14, audioSize,
-                     receiveBuffer.data() + 6, 8, nonce,
-                     receiveBuffer.data() + payload_size - 24);
+    cipher_->decrypt(result, receiveBuffer_.data() + 14, audioSize,
+                     receiveBuffer_.data() + 6, 8, nonce,
+                     receiveBuffer_.data() + payload_size - 24);
 
     if (!result.success) {
       std::cerr << "Did not decrypt properly" << std::endl;
@@ -165,7 +161,64 @@ uint32_t AudioDataHandler::extract_size_from_header(const u8Vec_t &header) {
 }
 
 void AudioDataHandler::handle_udp_data(const char *data, size_t length,
-                                       sockaddr_storage) {}
+                                       sockaddr_storage) {
+  if (correctContext_ < 0) {
+    return;
+  }
+
+  if (length < 38 || length > BUFFER_SIZE) {
+    return;
+  }
+
+  uint16_t sequence =
+      (static_cast<uint16_t>(data[2]) << 8 | static_cast<uint16_t>(data[3]));
+  uint32_t timestamp =
+      (static_cast<uint32_t>(data[4]) << 24 |
+       static_cast<uint32_t>(data[5]) << 16 |
+       static_cast<uint32_t>(data[6]) << 8 | static_cast<uint32_t>(data[7]));
+
+  std::memcpy(tag_.data(), data + length - 24, 16);
+  std::memcpy(nonce.data() + 4, data + length - 8, 8);
+
+  int audioSize = length - 36;
+
+  cipher_->decrypt(result, (const uint8_t *)data + 12, audioSize,
+                   (const uint8_t *)data + 4, 8, nonce,
+                   (const uint8_t *)data + length - 24);
+
+  if (!result.success) {
+    std::cerr << "Did not decrypt properly" << std::endl;
+    return;
+  }
+
+  auto borrowed = audioPlayer_->borrow_buffer(cancel_);
+  if (!borrowed)
+    return;
+  pcm = std::move(*borrowed);
+  pcm.clear();
+
+  std::cout << "Sequence: " << sequence << " | Number of bytes: " << result.size
+            << std::endl;
+  std::cout << "Bytes 0-63" << std::endl;
+  for (size_t i = 0; i < 64; i++)
+    printf("%02x ", (uint8_t)result.plaintext[i]);
+  std::cout << std::endl;
+
+  std::cout << "Bytes 256-287" << std::endl;
+  for (size_t i = 256; i < 288; i++)
+    printf("%02x ", (uint8_t)result.plaintext[i]);
+  std::cout << std::endl;
+
+  if (audioDecoder_->play_audio(result.plaintext.data(), result.size, pcm) <
+      0) {
+    audioPlayer_->return_to_free_pool(std::move(pcm));
+    return;
+  }
+
+  audioPlayer_->queue_ready_buffer(std::move(pcm));
+
+  result.plaintext.clear();
+}
 
 int get_key(StreamSlotArray streams, size_t key) {
   for (size_t i = 0; i < streams.size(); i++) {

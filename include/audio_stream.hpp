@@ -12,6 +12,12 @@
 
 #define MAX_STREAMS 10
 
+struct AudioFrame {
+  uint16_t sequence;
+  uint32_t timestamp;
+  std::vector<uint16_t> pcm;
+};
+
 class AudioDataHandler {
 public:
   AudioDataHandler(const std::shared_ptr<AudioPlayer> &audioPlayer,
@@ -28,6 +34,14 @@ private:
   std::unique_ptr<UDPServer> udpListener_;
   std::atomic<bool> running_{false};
   std::atomic<bool> cancel_{false};
+  u8Vec_t receiveBuffer_;
+
+  DecryptionResult result;
+  std::vector<int16_t> pcm;
+  u8Vec_t tag_;
+  std::array<uint8_t, 12> nonce = {0};
+
+  int correctContext_;
 
   std::unique_ptr<CipherTransporter> cipher_;
   std::unique_ptr<AudioDecoder> audioDecoder_;

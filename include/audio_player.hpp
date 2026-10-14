@@ -1,7 +1,9 @@
 #pragma once
 
+#include "audio_stream.hpp"
 #include <condition_variable>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <queue>
 #include <vector>
@@ -31,6 +33,9 @@ public:
 private:
   std::queue<std::vector<int16_t>> freeQueue_;
   std::queue<std::vector<int16_t>> readyQueue_;
+
+  std::map<uint16_t, AudioFrame> jitterBuffer_;
+
   std::mutex poolMutex_;
   std::condition_variable freeAvailableCV_;
   std::condition_variable dataAvailableCV_;
@@ -45,6 +50,8 @@ private:
 
   snd_pcm_t *pcm_handle_ = nullptr;
   snd_mixer_t *mixer_;
+
+  uint64_t audioFormat_;
 
   int prepare();
   void playback_loop();

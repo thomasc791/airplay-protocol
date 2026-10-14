@@ -5,10 +5,10 @@
 
 constexpr std::string tag = "AudioDecoder";
 
-namespace {
 constexpr uint64_t AAC_LC_44100_2 = 1ULL << 22;
-constexpr uint64_t AAC_LC_48000_2 = 1ULL << 23;
-} // namespace
+constexpr uint64_t AAC_LC_48000_2 = 1ULL << 24;
+constexpr uint64_t ALAC_44100_2 = 1ULL << 18;
+constexpr uint64_t ALAC_48000_2 = 1ULL << 20;
 
 AudioDecoder::AudioDecoder(uint64_t format) : format_(format) {}
 
@@ -20,17 +20,62 @@ AudioDecoder::~AudioDecoder() {
 }
 
 int AudioDecoder::create_context() {
-  uint8_t asc[2];
+  AVCodecID codecId = AV_CODEC_ID_NONE;
+  const uint8_t *extradata_ptr = nullptr;
+  size_t extradata_size = 0;
+
+  static const uint8_t alac_44100_16_extradata[] = {
+      0x00, 0x00, 0x00, 0x24, 0x61, 0x6c, 0x61, 0x63, // 0-7: size (36), "alac"
+      0x00, 0x00, 0x00, 0x00,                         // 8-11: version
+      0x00, 0x00, 0x01, 0x60,                         // 12-15: spf (352)
+      0x00, 0x10,             // 16: compat (0), 17: ss (16)
+      0x28, 0x0a, 0x0e, 0x02, // 18-21: history, init, rice, channels
+      0x00, 0xff,             // 22-23: max_run (255)
+      0x00, 0x00, 0x00, 0x00, // 24-27: max_coded_frame_size (0)
+      0x00, 0x00, 0x00, 0x00, // 28-31: average_bitrate (0)
+      0x00, 0x00, 0xac, 0x44  // 32-35: sample_rate (44100)
+  };
+  ;
+
+  static const uint8_t alac_48000_16_extradata[] = {
+      0x00, 0x00, 0x00, 0x24, 0x61, 0x6c, 0x61, 0x63, // 0-7: size (36), "alac"
+      0x00, 0x00, 0x00, 0x00,                         // 8-11: version
+      0x00, 0x00, 0x01, 0x60,                         // 12-15: spf (352)
+      0x00, 0x10,             // 16: compat (0), 17: ss (16)
+      0x28, 0x0a, 0x0e, 0x02, // 18-21: history, init, rice, channels
+      0x00, 0xff,             // 22-23: max_run (255)
+      0x00, 0x00, 0x00, 0x00, // 24-27: max_coded_frame_size (0)
+      0x00, 0x00, 0x00, 0x00, // 28-31: average_bitrate (0)
+      0x00, 0x00, 0xbb, 0x80  // 32-35: sample_rate (44100)
+  };
+
+  static const uint8_t aac_44100_extradata[] = {0x12, 0x10};
+  static const uint8_t aac_48000_extradata[] = {0x11, 0x90};
+
   switch (format_) {
   case AAC_LC_44100_2:
     sampleRate_ = 44100;
-    asc[0] = 0x12;
-    asc[1] = 0x10;
+    codecId = AV_CODEC_ID_AAC;
+    extradata_ptr = aac_44100_extradata;
+    extradata_size = sizeof(aac_44100_extradata);
     break;
   case AAC_LC_48000_2:
     sampleRate_ = 48000;
-    asc[0] = 0x11;
-    asc[1] = 0x90;
+    codecId = AV_CODEC_ID_AAC;
+    extradata_ptr = aac_48000_extradata;
+    extradata_size = sizeof(aac_48000_extradata);
+    break;
+  case ALAC_44100_2:
+    sampleRate_ = 44100;
+    codecId = AV_CODEC_ID_ALAC;
+    extradata_ptr = alac_44100_16_extradata;
+    extradata_size = sizeof(alac_44100_16_extradata);
+    break;
+  case ALAC_48000_2:
+    sampleRate_ = 48000;
+    codecId = AV_CODEC_ID_ALAC;
+    extradata_ptr = alac_48000_16_extradata;
+    extradata_size = sizeof(alac_48000_16_extradata);
     break;
   default:
     std::cerr << "[AudioDecoder] Unsupported audioFormat: " << format_
@@ -38,7 +83,7 @@ int AudioDecoder::create_context() {
     return -1;
   }
 
-  codec_ = avcodec_find_decoder(AV_CODEC_ID_AAC);
+  codec_ = avcodec_find_decoder(codecId);
   if (!codec_) {
     return -1;
   }
@@ -52,13 +97,13 @@ int AudioDecoder::create_context() {
   av_channel_layout_default(&ctx_->ch_layout, channels_);
 
   ctx_->extradata = static_cast<uint8_t *>(
-      av_mallocz(sizeof(asc) + AV_INPUT_BUFFER_PADDING_SIZE));
+      av_mallocz(extradata_size + AV_INPUT_BUFFER_PADDING_SIZE));
   if (!ctx_->extradata) {
     return -1;
   }
 
-  std::memcpy(ctx_->extradata, asc, sizeof(asc));
-  ctx_->extradata_size = sizeof(asc);
+  std::memcpy(ctx_->extradata, extradata_ptr, extradata_size);
+  ctx_->extradata_size = extradata_size;
 
   int ret = avcodec_open2(ctx_, codec_, nullptr);
   if (ret < 0) {

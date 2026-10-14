@@ -103,7 +103,7 @@ int AirPlayServer::publish_raop_service() {
   std::map<std::string, std::string> txt = {
       // {"pk", crypto_handler_->get_public_hex_string()},
       {"ch", "2"},
-      {"cn", "0,1,2"},
+      {"cn", "0,1"},
       // {"et", "0,4"},
       // {"am", "Linux"},
       // {"tp", "UDP"},

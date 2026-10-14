@@ -10,6 +10,11 @@
 
 constexpr std::string tag = "AudioPlayer";
 
+extern const uint64_t AAC_LC_44100_2;
+extern const uint64_t AAC_LC_48000_2;
+extern const uint64_t ALAC_44100_2;
+extern const uint64_t ALAC_48000_2;
+
 AudioPlayer::AudioPlayer() {
   for (size_t i = 0; i < 10; i++) {
     std::vector<int16_t> buffer(8192, 0);
@@ -76,11 +81,21 @@ int AudioPlayer::prepare() {
     return err;
   }
 
+  switch (audioFormat_) {
+  case AAC_LC_44100_2:
+    break;
+  case AAC_LC_48000_2:
+    break;
+  case ALAC_44100_2:
+    break;
+  case ALAC_48000_2:
+    break;
+  }
   snd_pcm_set_params(pcm_handle_, SND_PCM_FORMAT_S16_LE,
                      SND_PCM_ACCESS_RW_INTERLEAVED, 2, 44100, 1, 500000);
 
   snd_mixer_open(&mixer_, 0);
-  snd_mixer_attach(mixer_, "hw:1");
+  snd_mixer_attach(mixer_, "hw:0");
   snd_mixer_selem_register(mixer_, nullptr, nullptr);
   snd_mixer_load(mixer_);
 
