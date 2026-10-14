@@ -1,4 +1,5 @@
 #include "network/ap.hpp"
+#include "utils.hpp"
 
 #include <chrono>
 #include <cstring>
@@ -6,13 +7,13 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <openssl/rand.h>
 #include <set>
 #include <thread>
 
 namespace fs = std::filesystem;
 
 namespace {
-
 constexpr const char *kConnectionId = "airplay-setup-ap";
 constexpr const char *kSsid = "Linux Airplay Receiver";
 const fs::path kDnsDir = "/etc/NetworkManager/dnsmasq-shared.d";
@@ -37,7 +38,13 @@ struct DeactivateResult {
 
 } // namespace
 
-// ---------------------------------------------------------------- captive DNS
+bool is_connected(NMDevice *device) {
+  if (nm_device_get_state(device) != NM_DEVICE_STATE_ACTIVATED) {
+    return false;
+  }
+  NMActiveConnection *ac = nm_device_get_active_connection(device);
+  return ac && g_strcmp0(nm_active_connection_get_id(ac), kConnectionId) != 0;
+}
 
 bool enable_captive_dns() {
   std::error_code ec;
@@ -63,7 +70,69 @@ void disable_captive_dns() {
 }
 
 SetupAP::SetupAP(NMClient *client, NMDevice *device)
-    : client_(client), device_(device), cancellable_(g_cancellable_new()) {}
+    : client_(client), device_(device), cancellable_(g_cancellable_new()) {
+  if (get_password() <= 0) {
+    set_password();
+  }
+}
+
+int SetupAP::set_password() {
+  pw_.resize(12);
+  int err = RAND_bytes(pw_.data(), 12);
+  pwS_ = chars_to_hex(pw_);
+
+  if (err <= 0) {
+    std::cerr << "Error creating RANDOM key" << std::endl;
+    return err;
+  }
+
+  const char *xdg_data = std::getenv("XDG_DATA_HOME");
+  fs::path baseDir =
+      xdg_data ? fs::path(xdg_data) : fs::path(std::getenv("HOME"));
+  fs::path keyDir = baseDir / "ap";
+  fs::path wifiPWPath = keyDir / "identity";
+
+  std::ofstream wifiKeyFile(wifiPWPath);
+
+  if (wifiKeyFile.is_open()) {
+    wifiKeyFile << chars_to_hex(pw_);
+
+    wifiKeyFile.close();
+  } else {
+    std::cerr << "Error writing public key" << std::endl;
+    return -1;
+  }
+
+  return 1;
+}
+
+int SetupAP::get_password() {
+  const char *xdg_data = std::getenv("XDG_DATA_HOME");
+  fs::path baseDir =
+      xdg_data ? fs::path(xdg_data) : fs::path(std::getenv("HOME"));
+  fs::path keyDir = baseDir / "ap";
+  fs::path wifiPWPath = keyDir / "identity";
+
+  if (!fs::exists(keyDir)) {
+    if (!fs::create_directory(keyDir)) {
+      std::cerr << "Failed to create directory at " << keyDir << std::endl;
+
+      return -1;
+    }
+  }
+  if (!fs::exists(wifiPWPath)) {
+    return -1;
+  }
+
+  std::ifstream wifiPWFile(wifiPWPath);
+  std::getline(wifiPWFile, pwS_);
+
+  pw_ = hex_to_chars(pwS_);
+
+  std::cout << pwS_ << std::endl;
+
+  return 1;
+}
 
 SetupAP::~SetupAP() {
   stop();
@@ -119,6 +188,15 @@ bool SetupAP::start() {
                nullptr);
   g_bytes_unref(ssid);
   nm_connection_add_setting(connection, NM_SETTING(s_wifi));
+
+  auto *s_sec =
+      NM_SETTING_WIRELESS_SECURITY(nm_setting_wireless_security_new());
+  g_object_set(s_sec, NM_SETTING_WIRELESS_SECURITY_KEY_MGMT, "wpa-psk",
+               NM_SETTING_WIRELESS_SECURITY_PSK, pwS_.c_str(), nullptr);
+  nm_setting_wireless_security_add_proto(s_sec, "rsn");
+  nm_setting_wireless_security_add_pairwise(s_sec, "ccmp");
+  nm_setting_wireless_security_add_group(s_sec, "ccmp");
+  nm_connection_add_setting(connection, NM_SETTING(s_sec));
 
   auto *s_ip4 = NM_SETTING_IP_CONFIG(nm_setting_ip4_config_new());
   g_object_set(s_ip4, NM_SETTING_IP_CONFIG_METHOD,

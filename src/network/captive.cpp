@@ -3,8 +3,10 @@
 
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <unistd.h>
+#include <utility>
 
 CaptivePortal::CaptivePortal() {
   auto callback = [this](int id) { this->handle_http_client(id); };
@@ -15,6 +17,14 @@ CaptivePortal::~CaptivePortal() { httpServer_->stop(); }
 
 void CaptivePortal::start() { httpServer_->start(); }
 void CaptivePortal::stop() { httpServer_->stop(); }
+
+std::optional<Credentials>
+CaptivePortal::wait_for_credentials(std::chrono::milliseconds t) {
+  std::unique_lock<std::mutex> lk(credMutex_);
+  if (!credCV_.wait_for(lk, t, [this] { return creds_.has_value(); }))
+    return std::nullopt;
+  return std::exchange(creds_, std::nullopt);
+}
 
 void CaptivePortal::handle_http_client(int client_fd) {
   char buffer[4096] = {0};
@@ -57,8 +67,11 @@ void CaptivePortal::handle_http_client(int client_fd) {
         send(client_fd, response.str().c_str(), response.str().length(), 0);
         close(client_fd);
 
-        // TODO: Here you will trigger your libnm code to connect
-        // to the new SSID and shut down the AP.
+        {
+          std::lock_guard<std::mutex> lock(credMutex_);
+          creds_ = Credentials{ssid, password};
+          credCV_.notify_one();
+        }
         return;
       }
     }

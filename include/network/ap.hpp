@@ -1,5 +1,6 @@
 #pragma once
 
+#include "crypto.hpp"
 #include <NetworkManager.h>
 #include <string>
 #include <vector>
@@ -14,7 +15,7 @@ public:
   SetupAP &operator=(const SetupAP &) = delete;
 
   bool start();
-  void stop(); // idempotent
+  void stop();
   bool is_active() const { return active_ != nullptr; }
 
 private:
@@ -24,11 +25,18 @@ private:
   GCancellable *cancellable_;
   bool activationDone_ = false;
 
+  u8Vec_t pw_;
+  std::string pwS_;
+
+  int set_password();
+  int get_password();
+
   bool deactivate(NMActiveConnection *conn);
   void cleanup_stale();
   static void on_activated(GObject *source, GAsyncResult *res, gpointer self);
 };
 
+bool is_connected(NMDevice *device);
 bool enable_captive_dns();
 void disable_captive_dns();
 

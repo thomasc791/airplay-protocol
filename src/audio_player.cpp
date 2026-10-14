@@ -3,7 +3,6 @@
 
 #include <alsa/asoundlib.h>
 #include <cstdint>
-#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -70,7 +69,7 @@ void AudioPlayer::queue_ready_buffer(std::vector<int16_t> pcm) {
 
 int AudioPlayer::prepare() {
   int err =
-      snd_pcm_open(&pcm_handle_, "plughw:1,0", SND_PCM_STREAM_PLAYBACK, 0);
+      snd_pcm_open(&pcm_handle_, "plughw:0,0", SND_PCM_STREAM_PLAYBACK, 0);
   if (err < 0) {
     std::cerr << "ALSA Error: Could not open audio device: "
               << snd_strerror(err) << std::endl;
@@ -92,8 +91,6 @@ void AudioPlayer::playback_loop() {
   if (prepare()) {
     return;
   }
-
-  std::ofstream raw("out.raw", std::ios::binary | std::ios::app);
 
   while (running_) {
     {
@@ -118,8 +115,6 @@ void AudioPlayer::playback_loop() {
       seenGen_ = gen;
       hardwareChunk_.clear();
     }
-    raw.write(reinterpret_cast<const char *>(hardwareChunk_.data()),
-              hardwareChunk_.size());
     play();
 
     {
@@ -205,9 +200,18 @@ void AudioPlayer::play() {
   if (signal_sum == 0) {
     std::cout << "Warning: ALSA received absolute silence (0 variance)."
               << std::endl;
+    return;
   }
 
   int frames = hardwareChunk_.size() / 2;
+  size_t clipped = 0;
+
+  for (int16_t s : hardwareChunk_)
+    if (s == 32767 || s == -32768)
+      ++clipped;
+  if (clipped)
+    std::cerr << "clipped samples: " << clipped << "\n";
+
   snd_pcm_sframes_t written =
       snd_pcm_writei(pcm_handle_, hardwareChunk_.data(), frames);
 
