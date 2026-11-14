@@ -3,6 +3,7 @@
 #include "audio_decoder.hpp"
 #include "audio_player.hpp"
 #include "crypto.hpp"
+#include "plist_encoder.hpp"
 #include "socket.hpp"
 #include "transport_crypto.hpp"
 
@@ -12,10 +13,23 @@
 
 #define MAX_STREAMS 10
 
-struct AudioFrame {
-  uint16_t sequence;
-  uint32_t timestamp;
-  std::vector<uint16_t> pcm;
+struct AudioSetup {
+  uint64_t audioFormat = 0;
+  bool supportsDynamicStreamID = false;
+  uint64_t streamConnectionID = 0;
+  uint64_t ct = 0;
+  std::string audioMode = "";
+  uint32_t spf = 352;
+  uint16_t controlPort = 0;
+  uint32_t latencyMax = 0;
+  bool isMedia = false;
+  uint8_t type = 0;
+  uint64_t sr = 44100;
+  u8Vec_t shk = {};
+  uint32_t latencyMin = 0;
+
+  explicit AudioSetup(const PlistEncoder::Value::Dict &dictionary);
+  AudioSetup() = default;
 };
 
 class AudioDataHandler {
@@ -41,6 +55,7 @@ private:
   u8Vec_t tag_;
   std::array<uint8_t, 12> nonce = {0};
 
+  uint32_t spf;
   int correctContext_;
 
   std::unique_ptr<CipherTransporter> cipher_;

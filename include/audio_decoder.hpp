@@ -11,6 +11,11 @@ extern "C" {
 #include <libswresample/swresample.h>
 }
 
+constexpr uint64_t AAC_LC_44100_2 = 1ULL << 22;
+constexpr uint64_t AAC_LC_48000_2 = 1ULL << 24;
+constexpr uint64_t ALAC_44100_2 = 1ULL << 18;
+constexpr uint64_t ALAC_48000_2 = 1ULL << 20;
+
 class AudioDecoder {
 public:
   AudioDecoder(uint64_t format);

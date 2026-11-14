@@ -9,6 +9,38 @@
 constexpr std::string tag = "AudioHandler";
 constexpr size_t BUFFER_SIZE = 0x400000;
 
+AudioSetup::AudioSetup(const PlistEncoder::Value::Dict &dictionary) {
+  for (const auto &entry : dictionary) {
+    if (entry.key == "audioFormat") {
+      this->audioFormat = entry.value.uintVal;
+    } else if (entry.key == "supportsDynamicStreamID") {
+      this->supportsDynamicStreamID = entry.value.boolVal;
+    } else if (entry.key == "streamConnectionID") {
+      this->streamConnectionID = entry.value.uintVal;
+    } else if (entry.key == "ct") {
+      this->ct = entry.value.uintVal;
+    } else if (entry.key == "audioMode") {
+      this->audioMode = entry.value.stringVal;
+    } else if (entry.key == "spf") {
+      this->spf = static_cast<uint32_t>(entry.value.uintVal);
+    } else if (entry.key == "controlPort") {
+      this->controlPort = static_cast<uint16_t>(entry.value.uintVal);
+    } else if (entry.key == "latencyMax") {
+      this->latencyMax = static_cast<uint32_t>(entry.value.uintVal);
+    } else if (entry.key == "isMedia") {
+      this->isMedia = entry.value.boolVal;
+    } else if (entry.key == "type") {
+      this->type = static_cast<uint8_t>(entry.value.uintVal);
+    } else if (entry.key == "sr") {
+      this->sr = entry.value.uintVal;
+    } else if (entry.key == "shk") {
+      this->shk = entry.value.dataVal;
+    } else if (entry.key == "latencyMin") {
+      this->latencyMin = static_cast<uint32_t>(entry.value.uintVal);
+    }
+  }
+}
+
 AudioDataHandler::AudioDataHandler(
     const std::shared_ptr<AudioPlayer> &audioPlayer, uint64_t format,
     u8Vec_t shk, Protocol protocol)
@@ -196,18 +228,6 @@ void AudioDataHandler::handle_udp_data(const char *data, size_t length,
     return;
   pcm = std::move(*borrowed);
   pcm.clear();
-
-  std::cout << "Sequence: " << sequence << " | Number of bytes: " << result.size
-            << std::endl;
-  std::cout << "Bytes 0-63" << std::endl;
-  for (size_t i = 0; i < 64; i++)
-    printf("%02x ", (uint8_t)result.plaintext[i]);
-  std::cout << std::endl;
-
-  std::cout << "Bytes 256-287" << std::endl;
-  for (size_t i = 256; i < 288; i++)
-    printf("%02x ", (uint8_t)result.plaintext[i]);
-  std::cout << std::endl;
 
   if (audioDecoder_->play_audio(result.plaintext.data(), result.size, pcm) <
       0) {

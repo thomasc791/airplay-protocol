@@ -5,11 +5,6 @@
 
 constexpr std::string tag = "AudioDecoder";
 
-constexpr uint64_t AAC_LC_44100_2 = 1ULL << 22;
-constexpr uint64_t AAC_LC_48000_2 = 1ULL << 24;
-constexpr uint64_t ALAC_44100_2 = 1ULL << 18;
-constexpr uint64_t ALAC_48000_2 = 1ULL << 20;
-
 AudioDecoder::AudioDecoder(uint64_t format) : format_(format) {}
 
 AudioDecoder::~AudioDecoder() {
@@ -35,7 +30,6 @@ int AudioDecoder::create_context() {
       0x00, 0x00, 0x00, 0x00, // 28-31: average_bitrate (0)
       0x00, 0x00, 0xac, 0x44  // 32-35: sample_rate (44100)
   };
-  ;
 
   static const uint8_t alac_48000_16_extradata[] = {
       0x00, 0x00, 0x00, 0x24, 0x61, 0x6c, 0x61, 0x63, // 0-7: size (36), "alac"
@@ -46,7 +40,7 @@ int AudioDecoder::create_context() {
       0x00, 0xff,             // 22-23: max_run (255)
       0x00, 0x00, 0x00, 0x00, // 24-27: max_coded_frame_size (0)
       0x00, 0x00, 0x00, 0x00, // 28-31: average_bitrate (0)
-      0x00, 0x00, 0xbb, 0x80  // 32-35: sample_rate (44100)
+      0x00, 0x00, 0xbb, 0x80  // 32-35: sample_rate (48000)
   };
 
   static const uint8_t aac_44100_extradata[] = {0x12, 0x10};

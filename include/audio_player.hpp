@@ -1,6 +1,5 @@
 #pragma once
 
-#include "audio_stream.hpp"
 #include <condition_variable>
 #include <cstdint>
 #include <map>
@@ -9,6 +8,12 @@
 #include <vector>
 
 #include <alsa/asoundlib.h>
+
+struct AudioFrame {
+  uint16_t sequence;
+  uint32_t timestamp;
+  std::vector<uint16_t> pcm;
+};
 
 class AudioPlayer {
 public:
@@ -24,8 +29,10 @@ public:
   void resume();
   void wake_waiters();
 
+  void set_latency_max(uint32_t latencyMax) { latencyMax_ = latencyMax; }
   void set_flush(uint16_t untilSeq) { dropUntilSeq_ = untilSeq; }
   bool should_drop(uint16_t seq);
+  void push_frame(AudioFrame frame);
 
   void queue_ready_buffer(std::vector<int16_t> pcm);
   void return_to_free_pool(std::vector<int16_t> buffer);
@@ -51,11 +58,14 @@ private:
   snd_pcm_t *pcm_handle_ = nullptr;
   snd_mixer_t *mixer_;
 
+  uint16_t jitterBufferSize_ = 10;
+  uint32_t latencyMax_;
   uint64_t audioFormat_;
 
   int prepare();
   void playback_loop();
   void play();
+  void init_free_queue(uint16_t size);
 
   void drain_ready();
 };

@@ -1,4 +1,5 @@
 #include "audio_player.hpp"
+#include "audio_decoder.hpp"
 #include "utils.hpp"
 
 #include <alsa/asoundlib.h>
@@ -10,17 +11,7 @@
 
 constexpr std::string tag = "AudioPlayer";
 
-extern const uint64_t AAC_LC_44100_2;
-extern const uint64_t AAC_LC_48000_2;
-extern const uint64_t ALAC_44100_2;
-extern const uint64_t ALAC_48000_2;
-
 AudioPlayer::AudioPlayer() {
-  for (size_t i = 0; i < 10; i++) {
-    std::vector<int16_t> buffer(8192, 0);
-    freeQueue_.push(std::move(buffer));
-  }
-
   running_ = true;
   playbackThread_ = std::thread([this]() { this->playback_loop(); });
 }
@@ -59,11 +50,13 @@ AudioPlayer::borrow_buffer(std::atomic<bool> &cancel) {
   return buffer;
 }
 
-void AudioPlayer::return_to_free_pool(std::vector<int16_t> buffer) {
-  std::lock_guard<std::mutex> lock(poolMutex_);
-  buffer.clear();
-  freeQueue_.push(std::move(buffer));
-  freeAvailableCV_.notify_one();
+void AudioPlayer::push_frame(AudioFrame frame) {
+  {
+    std::lock_guard<std::mutex> lock(poolMutex_);
+
+    jitterBuffer_.emplace(frame.sequence, frame);
+  }
+  dataAvailableCV_.notify_one();
 }
 
 void AudioPlayer::queue_ready_buffer(std::vector<int16_t> pcm) {
@@ -72,13 +65,27 @@ void AudioPlayer::queue_ready_buffer(std::vector<int16_t> pcm) {
   dataAvailableCV_.notify_one();
 }
 
+void AudioPlayer::return_to_free_pool(std::vector<int16_t> buffer) {
+  std::lock_guard<std::mutex> lock(poolMutex_);
+  buffer.clear();
+  freeQueue_.push(std::move(buffer));
+  freeAvailableCV_.notify_one();
+}
+
+void AudioPlayer::init_free_queue(uint16_t size) {}
+
 int AudioPlayer::prepare() {
   int err =
-      snd_pcm_open(&pcm_handle_, "plughw:0,0", SND_PCM_STREAM_PLAYBACK, 0);
+      snd_pcm_open(&pcm_handle_, "plughw:1,0", SND_PCM_STREAM_PLAYBACK, 0);
   if (err < 0) {
     std::cerr << "ALSA Error: Could not open audio device: "
               << snd_strerror(err) << std::endl;
     return err;
+  }
+
+  for (size_t i = 0; i < jitterBufferSize_; i++) {
+    std::vector<int16_t> buffer(8192, 0);
+    freeQueue_.push(std::move(buffer));
   }
 
   switch (audioFormat_) {
